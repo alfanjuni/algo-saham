@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -158,6 +160,24 @@ func analyze(item Item) Analysis {
 	}
 }
 
+func sendDiscordNotification(webhookURL string, message string) {
+	payload := map[string]string{
+		"content": message,
+	}
+	jsonPayload, _ := json.Marshal(payload)
+
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		log.Printf("Error sending Discord notification: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		log.Printf("Discord returned non-OK status: %d\n", resp.StatusCode)
+	}
+}
+
 func main() {
 	// Load .env file
 	err := godotenv.Load()
@@ -166,61 +186,97 @@ func main() {
 	}
 
 	token := os.Getenv("STOCKBIT_TOKEN")
+	discordWebhook := os.Getenv("DISCORD_WEBHOOK_URL")
 
 	if token == "" {
 		log.Fatal("STOCKBIT_TOKEN kosong")
+	}
+
+	if discordWebhook == "" {
+		log.Println("Warning: DISCORD_WEBHOOK_URL tidak ditemukan di .env")
 	}
 
 	// Template ID yang ingin diambil (default 0)
 	// Berdasarkan info user, template ID 0 berisi daftar saham yang ingin dipantau
 	templateIDs := []string{"177667"}
 
-	var buyList []string
-	var sellList []string
+	for {
+		var buyList []string
+		var sellList []string
 
-	for _, tid := range templateIDs {
-		resp, err := fetchOrderBook(tid, token)
-		if err != nil {
-			log.Printf("Error fetching template %s: %v\n", tid, err)
-			continue
-		}
+		fmt.Printf("\n[%s] Memulai analisis...\n", time.Now().Format("15:04:05"))
 
-		for _, item := range resp.Data.Item {
-			result := analyze(item)
+		var discordMsg strings.Builder
+		discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", time.Now().Format("15:04:05")))
+		discordMsg.WriteString("```\n")
+		discordMsg.WriteString(fmt.Sprintf("%-6s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Bid (Lot)", "Off (Lot)", "VR", "QR", "Signal"))
+		discordMsg.WriteString(strings.Repeat("-", 60) + "\n")
 
-			fmt.Printf(
-				"%-6s | BidVol=%12.0f OfferVol=%12.0f BidQ=%6.0f OfferQ=%6.0f VR=%.2f QR=%.2f => %s\n",
-				result.Symbol,
-				result.BidVolume,
-				result.OfferVolume,
-				result.BidQueue,
-				result.OfferQueue,
-				result.VolumeRatio,
-				result.QueueRatio,
-				result.Signal,
-			)
+		for _, tid := range templateIDs {
+			resp, err := fetchOrderBook(tid, token)
+			if err != nil {
+				log.Printf("Error fetching template %s: %v\n", tid, err)
+				continue
+			}
 
-			switch result.Signal {
-			case "BUY":
-				buyList = append(buyList, result.Symbol)
+			for _, item := range resp.Data.Item {
+				result := analyze(item)
 
-			case "SELL":
-				sellList = append(sellList, result.Symbol)
+				// Konversi ke Lot (/100)
+				bidLot := result.BidVolume / 100
+				offerLot := result.OfferVolume / 100
+
+				fmt.Printf(
+					"%-6s | BidLot=%10.0f OfferLot=%10.0f BidQ=%6.0f OfferQ=%6.0f VR=%.2f QR=%.2f => %s\n",
+					result.Symbol,
+					bidLot,
+					offerLot,
+					result.BidQueue,
+					result.OfferQueue,
+					result.VolumeRatio,
+					result.QueueRatio,
+					result.Signal,
+				)
+
+				discordMsg.WriteString(fmt.Sprintf("%-6s | %10.0f | %10.0f | %5.2f | %5.2f | %s\n",
+					result.Symbol, bidLot, offerLot, result.VolumeRatio, result.QueueRatio, result.Signal))
+
+				switch result.Signal {
+				case "BUY":
+					buyList = append(buyList, result.Symbol)
+
+				case "SELL":
+					sellList = append(sellList, result.Symbol)
+				}
 			}
 		}
-	}
+		discordMsg.WriteString("```")
 
-	fmt.Println()
-	fmt.Println("========== BUY ==========")
+		fmt.Println()
+		fmt.Println("========== BUY ==========")
+		for _, s := range buyList {
+			fmt.Println(s)
+		}
 
-	for _, s := range buyList {
-		fmt.Println(s)
-	}
+		fmt.Println()
+		fmt.Println("========== SELL ==========")
+		for _, s := range sellList {
+			fmt.Println(s)
+		}
 
-	fmt.Println()
-	fmt.Println("========== SELL ==========")
+		// Kirim notifikasi Discord (Semua saham + Highlight BUY/SELL)
+		if discordWebhook != "" {
+			if len(buyList) > 0 {
+				discordMsg.WriteString("\n✅ **BUY:** " + strings.Join(buyList, ", "))
+			}
+			if len(sellList) > 0 {
+				discordMsg.WriteString("\n❌ **SELL:** " + strings.Join(sellList, ", "))
+			}
 
-	for _, s := range sellList {
-		fmt.Println(s)
+			sendDiscordNotification(discordWebhook, discordMsg.String())
+		}
+
+		fmt.Printf("\nSelesai. Menunggu 20 detik untuk refresh berikutnya...\n")
+		time.Sleep(20 * time.Second)
 	}
 }

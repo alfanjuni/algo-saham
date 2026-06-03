@@ -18,6 +18,13 @@ const (
 	Threshold           = 2.0
 	STOCKBIT_TOKEN      = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgwNTEyODAxLCJpYXQiOjE3ODA0MjY0MDEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiNDRjOTcyOGMtZDI2ZC00YzQ0LTllMjAtNjlhMmMwMTQwYWQ3IiwibmJmIjoxNzgwNDI2NDAxLCJ2ZXIiOiJ2MSJ9.fJXPzUpKepugO2vHFIDf7PkQWjHEMpnx8VIyP81N5WyLqShq-TQDGCkmfkQanE9Oeflka24SJMEVIkdRESBkPxYpB5pdeOEzGYoR-ViG0gLEu8MJUIn8MsF98Pv9hICo-8bKw3GhRRhDx6wKHUNwr_zi-bVOwKmhPoyVPyZALb4STrHh6dknILFjeRLyFDjD_09CJ9yE8VRBKha7pmF8pSy36u1ajyvfq6kWuF0w8VDt_Ar8IGUFxzK5vT4Or38ISGpl1Z6H-64hJJLK8DUlXrgKnJ7KxFeJfcPx5jrr7uP3o8NIVg2ANDQC6VavFDxXC2fRaFuxaM6s8lP96YY1xg"
 	DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1511451021178704044/3TV6cdYYkcE3R9A-9BLhVVNjQRLCowcFSHJhSNemuszPEkSqJKSVUtS1Y-3SPCTVkQxj"
+
+	// Pengaturan Jam Operasional (WIB)
+	UseTradingHours = true
+	StartHour       = 8
+	StartMinute     = 30
+	EndHour         = 16
+	EndMinute       = 30
 )
 
 type OrderBookLevel struct {
@@ -226,6 +233,27 @@ func sendRawDiscordRequest(webhookURL string, message string) {
 	}
 }
 
+func isTradingTime() bool {
+	if !UseTradingHours {
+		return true
+	}
+
+	// Gunakan zona waktu WIB (UTC+7)
+	wib := time.FixedZone("WIB", 7*3600)
+	now := time.Now().In(wib)
+
+	// Cek hari (Senin-Jumat)
+	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+		return false
+	}
+
+	currentMinutes := now.Hour()*60 + now.Minute()
+	startMinutes := StartHour*60 + StartMinute
+	endMinutes := EndHour*60 + EndMinute
+
+	return currentMinutes >= startMinutes && currentMinutes <= endMinutes
+}
+
 func main() {
 	// Load .env file
 	err := godotenv.Load()
@@ -249,6 +277,12 @@ func main() {
 	templateIDs := []string{"177667"}
 
 	for {
+		if !isTradingTime() {
+			fmt.Printf("[%s] Di luar jam operasional (08:30-16:30 WIB). Menunggu...\n", time.Now().Format("15:04:05"))
+			time.Sleep(1 * time.Minute)
+			continue
+		}
+
 		var buyList []string
 		var sellList []string
 

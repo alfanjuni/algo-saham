@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,8 +14,10 @@ import (
 )
 
 const (
-	TopLevel  = 3
-	Threshold = 2.0
+	TopLevel            = 3
+	Threshold           = 2.0
+	STOCKBIT_TOKEN      = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgwNTEyODAxLCJpYXQiOjE3ODA0MjY0MDEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiNDRjOTcyOGMtZDI2ZC00YzQ0LTllMjAtNjlhMmMwMTQwYWQ3IiwibmJmIjoxNzgwNDI2NDAxLCJ2ZXIiOiJ2MSJ9.fJXPzUpKepugO2vHFIDf7PkQWjHEMpnx8VIyP81N5WyLqShq-TQDGCkmfkQanE9Oeflka24SJMEVIkdRESBkPxYpB5pdeOEzGYoR-ViG0gLEu8MJUIn8MsF98Pv9hICo-8bKw3GhRRhDx6wKHUNwr_zi-bVOwKmhPoyVPyZALb4STrHh6dknILFjeRLyFDjD_09CJ9yE8VRBKha7pmF8pSy36u1ajyvfq6kWuF0w8VDt_Ar8IGUFxzK5vT4Or38ISGpl1Z6H-64hJJLK8DUlXrgKnJ7KxFeJfcPx5jrr7uP3o8NIVg2ANDQC6VavFDxXC2fRaFuxaM6s8lP96YY1xg"
+	DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1511451021178704044/3TV6cdYYkcE3R9A-9BLhVVNjQRLCowcFSHJhSNemuszPEkSqJKSVUtS1Y-3SPCTVkQxj"
 )
 
 type OrderBookLevel struct {
@@ -232,8 +233,8 @@ func main() {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
 
-	token := os.Getenv("STOCKBIT_TOKEN")
-	discordWebhook := os.Getenv("DISCORD_WEBHOOK_URL")
+	token := STOCKBIT_TOKEN
+	discordWebhook := DISCORD_WEBHOOK_URL
 
 	if token == "" {
 		log.Fatal("STOCKBIT_TOKEN kosong")

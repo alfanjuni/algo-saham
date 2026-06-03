@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,12 @@ type Analysis struct {
 	VolumeRatio float64
 	QueueRatio  float64
 	Signal      string
+}
+
+type SignalResult struct {
+	Analysis
+	BidLot   float64
+	OfferLot float64
 }
 
 func toFloat(v string) float64 {
@@ -283,16 +290,9 @@ func main() {
 			continue
 		}
 
-		var buyList []string
-		var sellList []string
-
 		fmt.Printf("\n[%s] Memulai analisis...\n", time.Now().Format("15:04:05"))
 
-		var discordMsg strings.Builder
-		discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", time.Now().Format("15:04:05")))
-		discordMsg.WriteString("```\n")
-		discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
-		discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
+		var signals []SignalResult
 
 		for _, tid := range templateIDs {
 			resp, err := fetchOrderBook(tid, token)
@@ -321,46 +321,38 @@ func main() {
 					result.Signal,
 				)
 
-				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %5.2f | %5.2f | %s\n",
-					result.Symbol, result.LastPrice, bidLot, offerLot, result.VolumeRatio, result.QueueRatio, result.Signal))
-
-				switch result.Signal {
-				case "BUY":
-					buyList = append(buyList, fmt.Sprintf("$%s @ %d", result.Symbol, result.LastPrice))
-
-				case "SELL":
-					sellList = append(sellList, fmt.Sprintf("$%s @ %d", result.Symbol, result.LastPrice))
+				if result.Signal == "BUY" || result.Signal == "SELL" {
+					signals = append(signals, SignalResult{
+						Analysis: result,
+						BidLot:   bidLot,
+						OfferLot: offerLot,
+					})
 				}
 			}
 		}
-		discordMsg.WriteString("```")
 
-		fmt.Println()
-		fmt.Println("======== BUY OFFER RITEL ==========")
-		for _, s := range buyList {
-			fmt.Println(s)
-		}
+		// Kirim ke Discord jika ada sinyal BUY atau SELL
+		if len(signals) > 0 && discordWebhook != "" {
+			// Urutkan: BUY dulu baru SELL
+			sort.Slice(signals, func(i, j int) bool {
+				return signals[i].Signal < signals[j].Signal // "BUY" < "SELL" alphabetically
+			})
 
-		fmt.Println()
-		fmt.Println("======== SELL OFFER BANDAR =======")
-		for _, s := range sellList {
-			fmt.Println(s)
-		}
+			var discordMsg strings.Builder
+			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", time.Now().Format("15:04:05")))
+			discordMsg.WriteString("```\n")
+			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
+			discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
 
-		// Kirim notifikasi Discord (Semua saham + Highlight BUY/SELL)
-		if discordWebhook != "" {
-			if len(buyList) > 0 {
-				discordMsg.WriteString("\n✅ **BUY:**\n")
-				for _, s := range buyList {
-					discordMsg.WriteString(fmt.Sprintf("- %s\n", s))
+			for _, res := range signals {
+				icon := "🔴"
+				if res.Signal == "BUY" {
+					icon = "🟢"
 				}
+				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %5.2f | %5.2f | %s %s\n",
+					res.Symbol, res.LastPrice, res.BidLot, res.OfferLot, res.VolumeRatio, res.QueueRatio, icon, res.Signal))
 			}
-			if len(sellList) > 0 {
-				discordMsg.WriteString("\n❌ **SELL:**\n")
-				for _, s := range sellList {
-					discordMsg.WriteString(fmt.Sprintf("- %s\n", s))
-				}
-			}
+			discordMsg.WriteString("```")
 
 			sendDiscordNotification(discordWebhook, discordMsg.String())
 		}

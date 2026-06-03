@@ -26,9 +26,10 @@ type OrderBookLevel struct {
 }
 
 type Item struct {
-	Symbol string           `json:"symbol"`
-	Bid    []OrderBookLevel `json:"bid"`
-	Offer  []OrderBookLevel `json:"offer"`
+	Symbol    string           `json:"symbol"`
+	LastPrice int              `json:"lastprice"`
+	Bid       []OrderBookLevel `json:"bid"`
+	Offer     []OrderBookLevel `json:"offer"`
 }
 
 type Response struct {
@@ -39,6 +40,7 @@ type Response struct {
 
 type Analysis struct {
 	Symbol      string
+	LastPrice   int
 	BidVolume   float64
 	OfferVolume float64
 	BidQueue    float64
@@ -150,6 +152,7 @@ func analyze(item Item) Analysis {
 
 	return Analysis{
 		Symbol:      item.Symbol,
+		LastPrice:   item.LastPrice,
 		BidVolume:   bidVol,
 		OfferVolume: offerVol,
 		BidQueue:    bidQueue,
@@ -161,6 +164,50 @@ func analyze(item Item) Analysis {
 }
 
 func sendDiscordNotification(webhookURL string, message string) {
+	const maxChars = 1900 // Limit Discord 2000, gunakan 1900 untuk aman
+
+	if len(message) <= maxChars {
+		sendRawDiscordRequest(webhookURL, message)
+		return
+	}
+
+	// Pecah berdasarkan baris agar tidak memotong tengah tabel
+	lines := strings.Split(message, "\n")
+	var currentMsg strings.Builder
+	inCodeBlock := false
+
+	for _, line := range lines {
+		// Cek apakah kita sedang di dalam code block
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inCodeBlock = !inCodeBlock
+		}
+
+		// Jika menambah baris ini melebihi limit
+		if currentMsg.Len()+len(line)+10 > maxChars {
+			msgToSend := currentMsg.String()
+			if inCodeBlock {
+				msgToSend += "```" // Tutup code block di pesan ini
+			}
+			sendRawDiscordRequest(webhookURL, msgToSend)
+
+			currentMsg.Reset()
+			if inCodeBlock {
+				currentMsg.WriteString("```\n") // Buka kembali code block di pesan baru
+			}
+		}
+		currentMsg.WriteString(line + "\n")
+	}
+
+	if currentMsg.Len() > 0 {
+		sendRawDiscordRequest(webhookURL, currentMsg.String())
+	}
+}
+
+func sendRawDiscordRequest(webhookURL string, message string) {
+	if strings.TrimSpace(message) == "" || strings.TrimSpace(message) == "```" {
+		return
+	}
+
 	payload := map[string]string{
 		"content": message,
 	}
@@ -209,8 +256,8 @@ func main() {
 		var discordMsg strings.Builder
 		discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", time.Now().Format("15:04:05")))
 		discordMsg.WriteString("```\n")
-		discordMsg.WriteString(fmt.Sprintf("%-6s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Bid (Lot)", "Off (Lot)", "VR", "QR", "Signal"))
-		discordMsg.WriteString(strings.Repeat("-", 60) + "\n")
+		discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
+		discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
 
 		for _, tid := range templateIDs {
 			resp, err := fetchOrderBook(tid, token)
@@ -227,8 +274,9 @@ func main() {
 				offerLot := result.OfferVolume / 100
 
 				fmt.Printf(
-					"%-6s | BidLot=%10.0f OfferLot=%10.0f BidQ=%6.0f OfferQ=%6.0f VR=%.2f QR=%.2f => %s\n",
+					"%-6s | Price=%d BidLot=%10.0f OfferLot=%10.0f BidQ=%6.0f OfferQ=%6.0f VR=%.2f QR=%.2f => %s\n",
 					result.Symbol,
+					result.LastPrice,
 					bidLot,
 					offerLot,
 					result.BidQueue,
@@ -238,28 +286,28 @@ func main() {
 					result.Signal,
 				)
 
-				discordMsg.WriteString(fmt.Sprintf("%-6s | %10.0f | %10.0f | %5.2f | %5.2f | %s\n",
-					result.Symbol, bidLot, offerLot, result.VolumeRatio, result.QueueRatio, result.Signal))
+				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %5.2f | %5.2f | %s\n",
+					result.Symbol, result.LastPrice, bidLot, offerLot, result.VolumeRatio, result.QueueRatio, result.Signal))
 
 				switch result.Signal {
 				case "BUY":
-					buyList = append(buyList, result.Symbol)
+					buyList = append(buyList, fmt.Sprintf("$%s @ %d", result.Symbol, result.LastPrice))
 
 				case "SELL":
-					sellList = append(sellList, result.Symbol)
+					sellList = append(sellList, fmt.Sprintf("$%s @ %d", result.Symbol, result.LastPrice))
 				}
 			}
 		}
 		discordMsg.WriteString("```")
 
 		fmt.Println()
-		fmt.Println("========== BUY ==========")
+		fmt.Println("======== BUY OFFER RITEL ==========")
 		for _, s := range buyList {
 			fmt.Println(s)
 		}
 
 		fmt.Println()
-		fmt.Println("========== SELL ==========")
+		fmt.Println("======== SELL OFFER BANDAR =======")
 		for _, s := range sellList {
 			fmt.Println(s)
 		}
@@ -267,10 +315,16 @@ func main() {
 		// Kirim notifikasi Discord (Semua saham + Highlight BUY/SELL)
 		if discordWebhook != "" {
 			if len(buyList) > 0 {
-				discordMsg.WriteString("\n✅ **BUY:** " + strings.Join(buyList, ", "))
+				discordMsg.WriteString("\n✅ **BUY:**\n")
+				for _, s := range buyList {
+					discordMsg.WriteString(fmt.Sprintf("- %s\n", s))
+				}
 			}
 			if len(sellList) > 0 {
-				discordMsg.WriteString("\n❌ **SELL:** " + strings.Join(sellList, ", "))
+				discordMsg.WriteString("\n❌ **SELL:**\n")
+				for _, s := range sellList {
+					discordMsg.WriteString(fmt.Sprintf("- %s\n", s))
+				}
 			}
 
 			sendDiscordNotification(discordWebhook, discordMsg.String())

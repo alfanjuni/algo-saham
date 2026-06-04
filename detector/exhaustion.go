@@ -36,6 +36,7 @@ const (
 	SignalSell             SignalType = "SELL"
 	SignalSellerExhaustion SignalType = "SELLER_EXHAUSTION"
 	SignalBuyerExhaustion  SignalType = "BUYER_EXHAUSTION"
+	SignalNeutral          SignalType = "NEUTRAL"
 )
 
 type Signal struct {
@@ -47,11 +48,15 @@ type Signal struct {
 }
 
 type SymbolResult struct {
-	Symbol  string
-	Price   float64
-	Signals []Signal
-	OldAnlz OrderBookAnalysis // Tambahkan analisa lama
-	Err     error
+	Symbol    string
+	Price     float64
+	Signals   []Signal
+	OldAnlz   OrderBookAnalysis // Tambahkan analisa lama
+	TotalBuy  float64           // Total Buy Lot
+	TotalSell float64           // Total Sell Lot
+	BuyPct    string            // Buy Percentage
+	SellPct   string            // Sell Percentage
+	Err       error
 }
 
 func parseRaw(v interface{}) float64 {
@@ -275,6 +280,25 @@ func DetectSignals(candles []Candle) []Signal {
 		signals = append(signals, ss)
 	}
 
+	// 1e. Jika tidak ada signal, tambahkan signal NEUTRAL dengan score tertinggi dari 4 kriteria di atas
+	if len(signals) == 0 {
+		maxBaseScore := se.Score
+		if be.Score > maxBaseScore {
+			maxBaseScore = be.Score
+		}
+		if bs.Score > maxBaseScore {
+			maxBaseScore = bs.Score
+		}
+		if ss.Score > maxBaseScore {
+			maxBaseScore = ss.Score
+		}
+		signals = append(signals, Signal{
+			Time:  candles[i].Time,
+			Type:  SignalNeutral,
+			Score: maxBaseScore,
+		})
+	}
+
 	return signals
 }
 
@@ -316,12 +340,18 @@ func ScanSymbols(templateID string, date string, bearerToken string) []SymbolRes
 				res.Err = err
 			} else if len(chart.Data.Prices) > 0 {
 				var candles []Candle
+				var totalBuy, totalSell float64
 				for k := range chart.Data.Prices {
+					buyLot := parseRaw(chart.Data.Buy[k].Lot.Raw)
+					sellLot := parseRaw(chart.Data.Sell[k].Lot.Raw)
+					totalBuy += buyLot
+					totalSell += sellLot
+
 					c := Candle{
 						Time:      chart.Data.Prices[k].Time,
 						Price:     parseRaw(chart.Data.Prices[k].Value.Raw),
-						BuyLot:    parseRaw(chart.Data.Buy[k].Lot.Raw),
-						SellLot:   parseRaw(chart.Data.Sell[k].Lot.Raw),
+						BuyLot:    buyLot,
+						SellLot:   sellLot,
 						BuyValue:  parseRaw(chart.Data.Buy[k].Value.Raw),
 						SellValue: parseRaw(chart.Data.Sell[k].Value.Raw),
 						BuyFreq:   parseRaw(chart.Data.Buy[k].Frequency.Raw),
@@ -332,6 +362,10 @@ func ScanSymbols(templateID string, date string, bearerToken string) []SymbolRes
 					candles = append(candles, c)
 				}
 				res.Price = candles[len(candles)-1].Price
+				res.TotalBuy = totalBuy
+				res.TotalSell = totalSell
+				res.BuyPct = chart.Data.BookTotal.BuyPercentage
+				res.SellPct = chart.Data.BookTotal.SellPercentage
 				res.Signals = DetectSignals(candles)
 			}
 
@@ -353,11 +387,11 @@ func PrintTable(results []SymbolResult, scanTime time.Time) {
 
 	// --- TABLE 1: Z-SCORE HYBRID ---
 	w1 := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-	fmt.Println("╔" + strings.Repeat("═", 83) + "╗")
-	fmt.Printf("║  ORDERFLOW SCANNER (Z-SCORE)  │  %s  │  %d symbols               ║\n", scanTime.Format("02 Jan 2006 15:04"), len(results))
-	fmt.Println("╠" + strings.Repeat("═", 8) + "╦" + strings.Repeat("═", 7) + "╦" + strings.Repeat("═", 8) + "╦" + strings.Repeat("═", 14) + "╦" + strings.Repeat("═", 42) + "╣")
-	fmt.Fprintf(w1, "║ TICKER \t PRICE \t  SCORE \t SIGNAL       \t TRIGGERS                                  ║\n")
-	fmt.Println("╠" + strings.Repeat("═", 8) + "╬" + strings.Repeat("═", 7) + "╬" + strings.Repeat("═", 8) + "╬" + strings.Repeat("═", 14) + "╬" + strings.Repeat("═", 42) + "╣")
+	fmt.Println("╔" + strings.Repeat("═", 121) + "╗")
+	fmt.Printf("║  ORDERFLOW SCANNER (Z-SCORE)  │  %s  │  %d symbols                                                 ║\n", scanTime.Format("02 Jan 2006 15:04"), len(results))
+	fmt.Println("╠" + strings.Repeat("═", 8) + "╦" + strings.Repeat("═", 7) + "╦" + strings.Repeat("═", 8) + "╦" + strings.Repeat("═", 10) + "╦" + strings.Repeat("═", 10) + "╦" + strings.Repeat("═", 7) + "╦" + strings.Repeat("═", 7) + "╦" + strings.Repeat("═", 14) + "╦" + strings.Repeat("═", 42) + "╣")
+	fmt.Fprintf(w1, "║ TICKER \t PRICE \t  SCORE \t NET BUY   \t NET SELL  \t B% \t S% \t SIGNAL       \t TRIGGERS                                  ║\n")
+	fmt.Println("╠" + strings.Repeat("═", 8) + "╬" + strings.Repeat("═", 7) + "╬" + strings.Repeat("═", 8) + "╬" + strings.Repeat("═", 10) + "╬" + strings.Repeat("═", 10) + "╬" + strings.Repeat("═", 7) + "╬" + strings.Repeat("═", 7) + "╬" + strings.Repeat("═", 14) + "╬" + strings.Repeat("═", 42) + "╣")
 
 	for _, res := range results {
 		priceStr := fmt.Sprintf("%.0f", res.Price)
@@ -428,11 +462,11 @@ func PrintTable(results []SymbolResult, scanTime time.Time) {
 			}
 		}
 
-		fmt.Fprintf(w1, "║ %s%s\033[0m \t %s \t   %s \t %s%s\033[0m \t %s \t ║\n",
-			color, res.Symbol, priceStr, scoreStr, color, signalStr, triggersStr)
+		fmt.Fprintf(w1, "║ %s%s\033[0m \t %s \t   %s \t %.0f \t %.0f \t %s \t %s \t %s%s\033[0m \t %s \t ║\n",
+			color, res.Symbol, priceStr, scoreStr, res.TotalBuy, res.TotalSell, res.BuyPct, res.SellPct, color, signalStr, triggersStr)
 	}
 	w1.Flush()
-	fmt.Println("╚" + strings.Repeat("═", 8) + "╩" + strings.Repeat("═", 7) + "╩" + strings.Repeat("═", 8) + "╩" + strings.Repeat("═", 14) + "╩" + strings.Repeat("═", 42) + "╝")
+	fmt.Println("╚" + strings.Repeat("═", 8) + "╩" + strings.Repeat("═", 7) + "╩" + strings.Repeat("═", 8) + "╩" + strings.Repeat("═", 10) + "╩" + strings.Repeat("═", 10) + "╩" + strings.Repeat("═", 7) + "╩" + strings.Repeat("═", 7) + "╩" + strings.Repeat("═", 14) + "╩" + strings.Repeat("═", 42) + "╝")
 
 	fmt.Println() // Spacer
 
@@ -497,16 +531,16 @@ func SendZScoreOrderflowReport(webhookURL string, results []SymbolResult, scanTi
 	}
 
 	discordMsg.WriteString("```\n")
-	discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %s\n", "Symbol", "Price", "Score", "Signal"))
-	discordMsg.WriteString(strings.Repeat("-", 35) + "\n")
+	discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %10s | %10s | %s\n", "Symbol", "Price", "Score", "Net Buy", "Net Sell", "Signal"))
+	discordMsg.WriteString(strings.Repeat("-", 60) + "\n")
 
 	for _, res := range results {
-		// Get highest score among BUY/SELL
+		// Get highest score among BUY/SELL/NEUTRAL
 		var top Signal
 		foundSignal := false
 		for _, sig := range res.Signals {
-			if sig.Type == SignalBuy || sig.Type == SignalSell {
-				if sig.Score > top.Score {
+			if sig.Type == SignalBuy || sig.Type == SignalSell || sig.Type == SignalNeutral {
+				if !foundSignal || sig.Score > top.Score {
 					top = sig
 					foundSignal = true
 				}
@@ -516,7 +550,7 @@ func SendZScoreOrderflowReport(webhookURL string, results []SymbolResult, scanTi
 		icon := "⚪"
 		signalLabel := "NEUTRAL"
 
-		if foundSignal {
+		if foundSignal && top.Type != SignalNeutral {
 			icon = "🟢"
 			if top.Type == SignalSell {
 				icon = "🔴"
@@ -534,8 +568,8 @@ func SendZScoreOrderflowReport(webhookURL string, results []SymbolResult, scanTi
 			scoreStr = fmt.Sprintf("%.1f", top.Score)
 		}
 
-		discordMsg.WriteString(fmt.Sprintf("%-6s | %5.0f | %5s | %s %s\n",
-			res.Symbol, res.Price, scoreStr, icon, signalLabel))
+		discordMsg.WriteString(fmt.Sprintf("%-6s | %5.0f | %5s | %10.0f | %10.0f | %s %s\n",
+			res.Symbol, res.Price, scoreStr, res.TotalBuy, res.TotalSell, icon, signalLabel))
 	}
 	discordMsg.WriteString("```")
 
@@ -553,46 +587,73 @@ func SendBidOfferAnalysisReport(webhookURL string, results []SymbolResult, scanT
 	var discordMsg strings.Builder
 	discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", scanTime.Format("15:04:05")))
 
-	if len(results) == 0 {
-		discordMsg.WriteString("No symbols detected.")
-		sendDiscordNotification(webhookURL, discordMsg.String())
+	// Filter hanya BUY dan SELL
+	var filteredResults []SymbolResult
+	for _, res := range results {
+		if res.OldAnlz.Signal == "BUY" || res.OldAnlz.Signal == "SELL" {
+			filteredResults = append(filteredResults, res)
+		}
+	}
+
+	if len(filteredResults) == 0 {
 		return
 	}
 
-	// Sort: BUY first, then SELL, then NEUTRAL
-	sort.Slice(results, func(i, j int) bool {
-		si := results[i].OldAnlz.Signal
-		sj := results[j].OldAnlz.Signal
+	// Sort: BUY first, then SELL. Within each, sort by Ratio (max of Vol/Que ratio)
+	sort.Slice(filteredResults, func(i, j int) bool {
+		si := filteredResults[i].OldAnlz.Signal
+		sj := filteredResults[j].OldAnlz.Signal
 		if si != sj {
-			// BUY (0) < SELL (1) < NEUTRAL (2)
-			rank := map[string]int{"BUY": 0, "SELL": 1, "NEUTRAL": 2}
-			return rank[si] < rank[sj]
+			return si == "BUY" // BUY comes before SELL
 		}
-		return results[i].Symbol < results[j].Symbol
+		// Within same signal, sort by VolumeRatio descending
+		ri := filteredResults[i].OldAnlz.VolumeRatio
+		rj := filteredResults[j].OldAnlz.VolumeRatio
+		// For SELL, we might want to use the inverse if it was calculated differently,
+		// but exhaustion.go uses OldAnlz.VolumeRatio directly.
+		return ri > rj
 	})
 
 	discordMsg.WriteString("```\n")
 	discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %6s | %6s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
 	discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
 
-	for _, res := range results {
-		icon := "⚪"
-		if res.OldAnlz.Signal == "BUY" {
-			icon = "🟢"
-		} else if res.OldAnlz.Signal == "SELL" {
+	// Temukan ratio tertinggi untuk dikasih icon api
+	maxRatio := 0.0
+	for _, res := range filteredResults {
+		if res.OldAnlz.VolumeRatio > maxRatio {
+			maxRatio = res.OldAnlz.VolumeRatio
+		}
+	}
+
+	for _, res := range filteredResults {
+		icon := "🟢"
+		if res.OldAnlz.Signal == "SELL" {
 			icon = "🔴"
+		}
+
+		// Tambahkan api jika ratio-nya tertinggi
+		fireIcon := ""
+		if res.OldAnlz.VolumeRatio == maxRatio && maxRatio > 0 {
+			fireIcon = " 🔥"
 		}
 
 		// Lot = Volume / 100
 		bidLot := res.OldAnlz.BidVolume / 100
 		offLot := res.OldAnlz.OfferVolume / 100
 
-		discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %6.2f | %6.2f | %s %s\n",
-			res.Symbol, res.OldAnlz.LastPrice, bidLot, offLot, res.OldAnlz.VolumeRatio, res.OldAnlz.QueueRatio, icon, res.OldAnlz.Signal))
+		discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %6.2f | %6.2f | %s %s%s\n",
+			res.Symbol, res.OldAnlz.LastPrice, bidLot, offLot, res.OldAnlz.VolumeRatio, res.OldAnlz.QueueRatio, icon, res.OldAnlz.Signal, fireIcon))
 	}
 	discordMsg.WriteString("```")
 
 	sendDiscordNotification(webhookURL, discordMsg.String())
+}
+
+func parsePct(s string) float64 {
+	s = strings.TrimSuffix(s, "%")
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
 }
 
 func SendExhaustionAnalysisReport(webhookURL string, results []SymbolResult, scanTime time.Time) {
@@ -635,16 +696,16 @@ func SendExhaustionAnalysisReport(webhookURL string, results []SymbolResult, sca
 	})
 
 	discordMsg.WriteString("```\n")
-	discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %s\n", "Symbol", "Price", "Score", "Signal"))
-	discordMsg.WriteString(strings.Repeat("-", 35) + "\n")
+	discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Score", "Net Buy", "Net Sell", "B%", "S%", "Signal"))
+	discordMsg.WriteString(strings.Repeat("-", 75) + "\n")
 
 	for _, res := range results {
-		// Get highest score among EXHAUSTION
+		// Get highest score among EXHAUSTION/NEUTRAL
 		var top Signal
 		found := false
 		for _, sig := range res.Signals {
-			if sig.Type == SignalSellerExhaustion || sig.Type == SignalBuyerExhaustion {
-				if sig.Score > top.Score {
+			if sig.Type == SignalSellerExhaustion || sig.Type == SignalBuyerExhaustion || sig.Type == SignalNeutral {
+				if !found || sig.Score > top.Score {
 					top = sig
 					found = true
 				}
@@ -656,17 +717,29 @@ func SendExhaustionAnalysisReport(webhookURL string, results []SymbolResult, sca
 		scoreStr := "-"
 
 		if found {
-			icon = "🔵"
-			label = "SELL.EXH"
-			if top.Type == SignalBuyerExhaustion {
+			scoreStr = fmt.Sprintf("%.1f", top.Score)
+			if top.Type == SignalSellerExhaustion {
+				icon = "🔵"
+				label = "SELL.EXH"
+			} else if top.Type == SignalBuyerExhaustion {
 				icon = "🟡"
 				label = "BUY.EXH"
 			}
-			scoreStr = fmt.Sprintf("%.1f", top.Score)
 		}
 
-		discordMsg.WriteString(fmt.Sprintf("%-6s | %5.0f | %5s | %s %-8s\n",
-			res.Symbol, res.Price, scoreStr, icon, label))
+		// Icon api untuk percentage yang lebih besar
+		buyPctVal := parsePct(res.BuyPct)
+		sellPctVal := parsePct(res.SellPct)
+		buyFire := ""
+		sellFire := ""
+		if buyPctVal > sellPctVal {
+			buyFire = "🔥"
+		} else if sellPctVal > buyPctVal {
+			sellFire = "🔥"
+		}
+
+		discordMsg.WriteString(fmt.Sprintf("%-6s | %5.0f | %5s | %10.0f | %10.0f | %4s%1s | %4s%1s | %s %-8s\n",
+			res.Symbol, res.Price, scoreStr, res.TotalBuy, res.TotalSell, res.BuyPct, buyFire, res.SellPct, sellFire, icon, label))
 	}
 	discordMsg.WriteString("```")
 

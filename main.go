@@ -51,8 +51,8 @@ func main() {
 		}
 
 		// 4. Send reports to Discord
-		// Orderflow Scanner (Z-Score)
-		detector.SendZScoreOrderflowReport(exhaustionWebhook, results, time.Now())
+		// Orderflow Scanner (Z-Score) - NONAKTIF
+		// detector.SendZScoreOrderflowReport(exhaustionWebhook, results, time.Now())
 
 		// Bid/Offer Analysis (3 Papan Teratas)
 		detector.SendBidOfferAnalysisReport(discordWebhook, results, time.Now())

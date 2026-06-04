@@ -46,6 +46,10 @@ type TradeBookChartResponse struct {
 				Raw interface{} `json:"raw"`
 			} `json:"lot"`
 		} `json:"net_values_volume"`
+		BookTotal struct {
+			BuyPercentage  string `json:"buy_percentage"`
+			SellPercentage string `json:"sell_percentage"`
+		} `json:"book_total"`
 	} `json:"data"`
 }
 

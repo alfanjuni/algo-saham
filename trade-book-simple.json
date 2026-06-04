@@ -1,0 +1,107 @@
+{
+  "data": {
+    "big_money_buy": [],
+    "big_money_net_values": [],
+    "big_money_net_values_volume": [],
+    "big_money_sell": [],
+    "book_total": {
+      "big_money_buy_percentage": "",
+      "big_money_buy_value_percentage": "",
+      "big_money_sell_percentage": "",
+      "big_money_sell_value_percentage": "",
+      "buy_frequency": "",
+      "buy_lot": "972,557",
+      "buy_percentage": "54%",
+      "buy_value": "",
+      "buy_value_percentage": "54%",
+      "post_frequency": "",
+      "post_lot": "",
+      "pre_frequency": "",
+      "pre_lot": "",
+      "sell_frequency": "",
+      "sell_lot": "839,653",
+      "sell_percentage": "46%",
+      "sell_value": "",
+      "sell_value_percentage": "46%",
+      "total_frequency": "",
+      "total_lot": "1,812,210"
+    },
+    "buy": [
+      {
+        "frequency": {
+          "formatted": "593",
+          "raw": "593"
+        },
+        "lot": {
+          "formatted": "32,287",
+          "raw": "32287"
+        },
+        "time": "09:00",
+        "value": {
+          "formatted": "1.49B",
+          "raw": "1487530200"
+        }
+      }
+    ],
+    "date": "2026-06-04",
+    "is_fca_stock": false,
+    "is_show_pre_post": false,
+    "net_values": [
+      {
+        "frequency": null,
+        "lot": null,
+        "time": "09:00",
+        "value": {
+          "formatted": "761.66M",
+          "raw": "761656800"
+        }
+      }
+    ],
+    "net_values_volume": [
+      {
+        "frequency": null,
+        "lot": {
+          "formatted": "16,424",
+          "raw": "16424"
+        },
+        "time": "09:00",
+        "value": null
+      }
+    ],
+    "pre_post": {
+      "frequency": null,
+      "lot": null,
+      "time": "",
+      "value": null
+    },
+    "prices": [
+      {
+        "frequency": null,
+        "lot": null,
+        "time": "09:00",
+        "value": {
+          "formatted": "466",
+          "raw": "466"
+        }
+      }
+    ],
+    "sell": [
+      {
+        "frequency": {
+          "formatted": "374",
+          "raw": "374"
+        },
+        "lot": {
+          "formatted": "15,863",
+          "raw": "15863"
+        },
+        "time": "09:00",
+        "value": {
+          "formatted": "725.87M",
+          "raw": "725873400"
+        }
+      }
+    ]
+  },
+  "message": "Successfully loaded tradebook data chart"
+}

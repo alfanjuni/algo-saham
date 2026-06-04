@@ -326,21 +326,38 @@ func ScanSymbols(templateID string, date string, bearerToken string) []SymbolRes
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
+	// Batasi konkurensi (maksimal 5 request sekaligus)
+	sem := make(chan struct{}, 5)
+
 	for idx, item := range items {
 		wg.Add(1)
 		go func(i int, itm Item) {
 			defer wg.Done()
+			sem <- struct{}{}        // Ambil slot
+			defer func() { <-sem }() // Lepas slot
 
 			s := itm.Symbol
-			chart, err := FetchTradeBook(s, date, bearerToken)
+			var chart *TradeBookChartResponse
+			var err error
+
+			// Retry mechanism (maksimal 2 kali)
+			for retry := 0; retry < 2; retry++ {
+				chart, err = FetchTradeBook(s, date, bearerToken)
+				if err == nil && len(chart.Data.Prices) > 0 {
+					break
+				}
+				time.Sleep(500 * time.Millisecond) // Jeda antar retry
+			}
+
 			res := SymbolResult{
-				Symbol:  s,
-				Price:   float64(itm.LastPrice), // Gunakan harga dari template sebagai default
+				Symbol:  itm.Symbol,
+				Price:   float64(itm.LastPrice),
 				OldAnlz: AnalyzeOrderBook(itm),
 			}
+
 			if err != nil {
 				res.Err = err
-			} else if len(chart.Data.Prices) > 0 {
+			} else if chart != nil && len(chart.Data.Prices) > 0 {
 				var candles []Candle
 				for k := range chart.Data.Prices {
 					buyLot := parseRaw(chart.Data.Buy[k].Lot.Raw)
@@ -366,6 +383,9 @@ func ScanSymbols(templateID string, date string, bearerToken string) []SymbolRes
 				res.BuyPct = chart.Data.BookTotal.BuyPercentage
 				res.SellPct = chart.Data.BookTotal.SellPercentage
 				res.Signals = DetectSignals(candles)
+			} else {
+				// Jika data kosong setelah retry
+				res.Err = fmt.Errorf("empty data")
 			}
 
 			mu.Lock()
@@ -759,7 +779,7 @@ func SendExhaustionAnalysisReport(webhookURL string, results []SymbolResult, sca
 		}
 		bPctStr := fmt.Sprintf("%4s", bPctBase)
 		if buyPctVal > sellPctVal && buyPctVal > 0 {
-			bPctStr += "🔥"
+			bPctStr += "🟢"
 		} else {
 			bPctStr += "  "
 		}
@@ -770,7 +790,7 @@ func SendExhaustionAnalysisReport(webhookURL string, results []SymbolResult, sca
 		}
 		sPctStr := fmt.Sprintf("%4s", sPctBase)
 		if sellPctVal > buyPctVal && sellPctVal > 0 {
-			sPctStr += "🔥"
+			sPctStr += "🔴"
 		} else {
 			sPctStr += "  "
 		}

@@ -26,6 +26,11 @@ const (
 	StartMinute     = 30
 	EndHour         = 16
 	EndMinute       = 30
+
+	// Toggle Sinyal (true = ON, false = OFF)
+	EnableSignalBuy     = true
+	EnableSignalSell    = false
+	EnableSignalNeutral = false
 )
 
 type OrderBookLevel struct {
@@ -282,15 +287,17 @@ func main() {
 	// Template ID yang ingin diambil (default 0)
 	// Berdasarkan info user, template ID 0 berisi daftar saham yang ingin dipantau
 	templateIDs := []string{"177667"}
+	wib := time.FixedZone("WIB", 7*3600)
 
 	for {
+		nowWIB := time.Now().In(wib)
 		if !isTradingTime() {
-			fmt.Printf("[%s] Di luar jam operasional (08:30-16:30 WIB). Menunggu...\n", time.Now().Format("15:04:05"))
+			fmt.Printf("[%s] Di luar jam operasional (08:30-16:30 WIB). Menunggu...\n", nowWIB.Format("15:04:05"))
 			time.Sleep(1 * time.Minute)
 			continue
 		}
 
-		fmt.Printf("\n[%s] Memulai analisis...\n", time.Now().Format("15:04:05"))
+		fmt.Printf("\n[%s] Memulai analisis...\n", nowWIB.Format("15:04:05"))
 
 		var signals []SignalResult
 
@@ -321,7 +328,17 @@ func main() {
 					result.Signal,
 				)
 
-				if result.Signal == "BUY" || result.Signal == "SELL" {
+				// Filter berdasarkan toggle sinyal
+				showSignal := false
+				if result.Signal == "BUY" && EnableSignalBuy {
+					showSignal = true
+				} else if result.Signal == "SELL" && EnableSignalSell {
+					showSignal = true
+				} else if result.Signal == "NEUTRAL" && EnableSignalNeutral {
+					showSignal = true
+				}
+
+				if showSignal {
 					signals = append(signals, SignalResult{
 						Analysis: result,
 						BidLot:   bidLot,
@@ -331,23 +348,30 @@ func main() {
 			}
 		}
 
-		// Kirim ke Discord jika ada sinyal BUY atau SELL
+		// Kirim ke Discord jika ada sinyal yang lolos filter
 		if len(signals) > 0 && discordWebhook != "" {
-			// Urutkan: BUY dulu baru SELL
+			// Urutkan: BUY dulu baru SELL, lalu NEUTRAL
 			sort.Slice(signals, func(i, j int) bool {
-				return signals[i].Signal < signals[j].Signal // "BUY" < "SELL" alphabetically
+				if signals[i].Signal != signals[j].Signal {
+					// Custom order: BUY (1), SELL (2), NEUTRAL (3)
+					order := map[string]int{"BUY": 1, "SELL": 2, "NEUTRAL": 3}
+					return order[signals[i].Signal] < order[signals[j].Signal]
+				}
+				return signals[i].Symbol < signals[j].Symbol
 			})
 
 			var discordMsg strings.Builder
-			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", time.Now().Format("15:04:05")))
+			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("15:04:05")))
 			discordMsg.WriteString("```\n")
 			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
 			discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
 
 			for _, res := range signals {
-				icon := "🔴"
+				icon := "⚪" // Default Neutral
 				if res.Signal == "BUY" {
 					icon = "🟢"
+				} else if res.Signal == "SELL" {
+					icon = "🔴"
 				}
 				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %5.2f | %5.2f | %s %s\n",
 					res.Symbol, res.LastPrice, res.BidLot, res.OfferLot, res.VolumeRatio, res.QueueRatio, icon, res.Signal))
@@ -357,7 +381,7 @@ func main() {
 			sendDiscordNotification(discordWebhook, discordMsg.String())
 		}
 
-		fmt.Printf("\nSelesai. Menunggu 20 detik untuk refresh berikutnya...\n")
+		fmt.Printf("\n[%s] Selesai. Menunggu 20 detik untuk refresh berikutnya...\n", nowWIB.Format("15:04:05"))
 		time.Sleep(20 * time.Second)
 	}
 }

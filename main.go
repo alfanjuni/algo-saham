@@ -32,7 +32,7 @@ const (
 	// Toggle Sinyal (true = ON, false = OFF)
 	EnableSignalBuy     = true
 	EnableSignalSell    = false
-	EnableSignalNeutral = false
+	EnableSignalNeutral = true
 )
 
 type OrderBookLevel struct {
@@ -42,10 +42,11 @@ type OrderBookLevel struct {
 }
 
 type Item struct {
-	Symbol    string           `json:"symbol"`
-	LastPrice int              `json:"lastprice"`
-	Bid       []OrderBookLevel `json:"bid"`
-	Offer     []OrderBookLevel `json:"offer"`
+	Symbol           string           `json:"symbol"`
+	LastPrice        int              `json:"lastprice"`
+	PercentageChange float64          `json:"percentage_change"`
+	Bid              []OrderBookLevel `json:"bid"`
+	Offer            []OrderBookLevel `json:"offer"`
 }
 
 type Response struct {
@@ -55,15 +56,16 @@ type Response struct {
 }
 
 type Analysis struct {
-	Symbol      string
-	LastPrice   int
-	BidVolume   float64
-	OfferVolume float64
-	BidQueue    float64
-	OfferQueue  float64
-	VolumeRatio float64
-	QueueRatio  float64
-	Signal      string
+	Symbol           string
+	LastPrice        int
+	PercentageChange float64
+	BidVolume        float64
+	OfferVolume      float64
+	BidQueue         float64
+	OfferQueue       float64
+	VolumeRatio      float64
+	QueueRatio       float64
+	Signal           string
 }
 
 type SignalResult struct {
@@ -173,15 +175,16 @@ func analyze(item Item) Analysis {
 	}
 
 	return Analysis{
-		Symbol:      item.Symbol,
-		LastPrice:   item.LastPrice,
-		BidVolume:   bidVol,
-		OfferVolume: offerVol,
-		BidQueue:    bidQueue,
-		OfferQueue:  offerQueue,
-		VolumeRatio: volumeRatio,
-		QueueRatio:  queueRatio,
-		Signal:      signal,
+		Symbol:           item.Symbol,
+		LastPrice:        item.LastPrice,
+		PercentageChange: item.PercentageChange,
+		BidVolume:        bidVol,
+		OfferVolume:      offerVol,
+		BidQueue:         bidQueue,
+		OfferQueue:       offerQueue,
+		VolumeRatio:      volumeRatio,
+		QueueRatio:       queueRatio,
+		Signal:           signal,
 	}
 }
 
@@ -422,8 +425,8 @@ func main() {
 			var discordMsg strings.Builder
 			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("15:04:05")))
 			discordMsg.WriteString("```\n")
-			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %10s | %10s | %5s | %5s | %s\n", "Symbol", "Price", "Bid (Lot)", "Off (Lot)", "Vol", "Freq", "Signal"))
-			discordMsg.WriteString(strings.Repeat("-", 68) + "\n")
+			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %6s | %5s | %5s | %s\n", "Symbol", "Price", "Gain%", "Vol", "Freq", "Signal"))
+			discordMsg.WriteString(strings.Repeat("-", 48) + "\n")
 
 			for _, res := range signals {
 				icon := "⚪" // Default Neutral
@@ -432,8 +435,14 @@ func main() {
 				} else if res.Signal == "SELL" {
 					icon = "🔴"
 				}
-				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %10.0f | %10.0f | %5.2f | %5.2f | %s %s\n",
-					res.Symbol, res.LastPrice, res.BidLot, res.OfferLot, res.VolumeRatio, res.QueueRatio, icon, res.Signal))
+
+				freqStr := fmt.Sprintf("%.2f", res.QueueRatio)
+				if res.QueueRatio > FREQ_OFFER_THRESHOLD {
+					freqStr += "🔥"
+				}
+
+				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %5.2f%% | %5.2f | %5s | %s %s\n",
+					res.Symbol, res.LastPrice, res.PercentageChange, res.VolumeRatio, freqStr, icon, res.Signal))
 			}
 			discordMsg.WriteString("```")
 

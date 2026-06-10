@@ -32,7 +32,7 @@ const (
 	// Toggle Sinyal (true = ON, false = OFF)
 	EnableSignalBuy     = true
 	EnableSignalSell    = false
-	EnableSignalNeutral = true
+	EnableSignalNeutral = false
 )
 
 type OrderBookLevel struct {

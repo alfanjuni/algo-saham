@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,11 +73,95 @@ type SignalResult struct {
 	Analysis
 	BidLot   float64
 	OfferLot float64
+	TxCount  int
+}
+
+type DailySignal struct {
+	Symbol string `json:"symbol"`
+	Tx     int    `json:"Tx"`
+}
+
+type SignalStorage struct {
+	Dates map[string][]DailySignal `json:"dates"`
 }
 
 func toFloat(v string) float64 {
 	f, _ := strconv.ParseFloat(v, 64)
 	return f
+}
+
+func loadSignalStorage() (*SignalStorage, error) {
+	storage := &SignalStorage{
+		Dates: make(map[string][]DailySignal),
+	}
+
+	today := time.Now().Format("20060102")
+	filename := fmt.Sprintf("signals_%s.json", today)
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return storage, nil
+		}
+		return nil, err
+	}
+
+	err = json.Unmarshal(data, &storage)
+	if err != nil {
+		return nil, err
+	}
+
+	return storage, nil
+}
+
+func saveSignalStorage(storage *SignalStorage) error {
+	today := time.Now().Format("20060102")
+	filename := fmt.Sprintf("signals_%s.json", today)
+
+	data, err := json.MarshalIndent(storage, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, data, 0644)
+}
+
+func incrementSignalCount(storage *SignalStorage, symbol string) int {
+	today := time.Now().Format("20060102")
+
+	if _, exists := storage.Dates[today]; !exists {
+		storage.Dates[today] = []DailySignal{}
+	}
+
+	for i, ds := range storage.Dates[today] {
+		if ds.Symbol == symbol {
+			storage.Dates[today][i].Tx++
+			return storage.Dates[today][i].Tx
+		}
+	}
+
+	newSignal := DailySignal{
+		Symbol: symbol,
+		Tx:     1,
+	}
+	storage.Dates[today] = append(storage.Dates[today], newSignal)
+	return 1
+}
+
+func getSignalCount(storage *SignalStorage, symbol string) int {
+	today := time.Now().Format("20060102")
+
+	if _, exists := storage.Dates[today]; !exists {
+		return 0
+	}
+
+	for _, ds := range storage.Dates[today] {
+		if ds.Symbol == symbol {
+			return ds.Tx
+		}
+	}
+
+	return 0
 }
 
 func fetchOrderBook(templateID string, token string) (*Response, error) {
@@ -345,6 +430,15 @@ func main() {
 		log.Println("Warning: FREQ_OFFER_WEBHOOK_URL tidak ditemukan di .env")
 	}
 
+	// Load signal storage
+	signalStorage, err := loadSignalStorage()
+	if err != nil {
+		log.Printf("Warning: Failed to load signal storage: %v\n", err)
+		signalStorage = &SignalStorage{
+			Dates: make(map[string][]DailySignal),
+		}
+	}
+
 	// Template ID yang ingin diambil (default 0)
 	// Berdasarkan info user, template ID 0 berisi daftar saham yang ingin dipantau
 	templateIDs := []string{"177667"}
@@ -400,10 +494,16 @@ func main() {
 				}
 
 				if showSignal {
+					txCount := incrementSignalCount(signalStorage, result.Symbol)
+					err := saveSignalStorage(signalStorage)
+					if err != nil {
+						log.Printf("Warning: Failed to save signal storage: %v\n", err)
+					}
 					signals = append(signals, SignalResult{
 						Analysis: result,
 						BidLot:   bidLot,
 						OfferLot: offerLot,
+						TxCount:  txCount,
 					})
 				}
 
@@ -425,8 +525,8 @@ func main() {
 			var discordMsg strings.Builder
 			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("2006-01-02 15:04:05 WIB")))
 			discordMsg.WriteString("```\n")
-			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %5s | %-6s | %s\n", "Symbol", "Price", "Gain", "Vol", "Freq", "Signal"))
-			discordMsg.WriteString(strings.Repeat("-", 47) + "\n")
+			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %5s | %-5s | %3s | %s\n", "Symbol", "Price", "Gain", "Vol", "Freq", "Tx", "Signal"))
+			discordMsg.WriteString(strings.Repeat("-", 54) + "\n")
 
 			for _, res := range signals {
 				icon := "⚪️" // Default Neutral
@@ -448,8 +548,8 @@ func main() {
 					freqDisplay = fmt.Sprintf("%-4s  ", freqBase)
 				}
 
-				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %4.0f%% | %5.2f | %-6s | %s %s\n",
-					res.Symbol, res.LastPrice, res.PercentageChange, res.VolumeRatio, freqDisplay, icon, label))
+				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %4.0f%% | %5.2f | %-5s | %-3d | %s %s\n",
+					res.Symbol, res.LastPrice, res.PercentageChange, res.VolumeRatio, freqDisplay, res.TxCount, icon, label))
 			}
 			discordMsg.WriteString("```")
 

@@ -271,9 +271,9 @@ func isTradingTime() bool {
 	return currentMinutes >= startMinutes && currentMinutes <= endMinutes
 }
 
-func formatBidOfferTable(item Item) string {
+func formatBidOfferTable(item Item, queueRatio float64, nowWIB time.Time, percentageChange float64) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📊 **Bid Offer: %s** (Price: %d)\n", item.Symbol, item.LastPrice))
+	sb.WriteString(fmt.Sprintf("📊 **$%s** @%d | %.0f%% | %s | **Offer: %.2fx**\n", item.Symbol, item.LastPrice, percentageChange, nowWIB.Format("2006-01-02 15:04:05 WIB"), queueRatio))
 	sb.WriteString("```\n")
 	sb.WriteString(fmt.Sprintf("%-6s | %10s | %6s | %6s | %10s | %6s\n", "Freq", "Lot", "Bid", "Offer", "Lot", "Freq"))
 	sb.WriteString(strings.Repeat("-", 59) + "\n")
@@ -409,7 +409,7 @@ func main() {
 
 				// Notifikasi khusus jika Freq Offer (QueueRatio) > threshold
 				if result.QueueRatio > FREQ_OFFER_THRESHOLD && freqOfferWebhook != "" {
-					tableMsg := formatBidOfferTable(item)
+					tableMsg := formatBidOfferTable(item, result.QueueRatio, nowWIB, result.PercentageChange)
 					sendDiscordNotification(freqOfferWebhook, tableMsg)
 				}
 			}
@@ -423,7 +423,7 @@ func main() {
 			})
 
 			var discordMsg strings.Builder
-			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("15:04:05")))
+			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("2006-01-02 15:04:05 WIB")))
 			discordMsg.WriteString("```\n")
 			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %5s | %-6s | %s\n", "Symbol", "Price", "Gain", "Vol", "Freq", "Signal"))
 			discordMsg.WriteString(strings.Repeat("-", 47) + "\n")

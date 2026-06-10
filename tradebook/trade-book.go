@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -516,6 +517,75 @@ func printExhaustionSignals(exhaustions []ExhaustionSignal, symbol, date string)
 		fmt.Printf("  last_signal_time: \"%s\"\n", e.LastSignalTime)
 		fmt.Println()
 	}
+
+	// Send to Discord webhook
+	sendToDiscord(exhaustions, symbol, date)
+}
+
+func sendToDiscord(exhaustions []ExhaustionSignal, symbol, date string) {
+	type DiscordEmbedField struct {
+		Name   string `json:"name"`
+		Value  string `json:"value"`
+		Inline bool   `json:"inline"`
+	}
+	type DiscordEmbed struct {
+		Title  string              `json:"title"`
+		Color  int                 `json:"color"` // Green for buy, Red for sell
+		Fields []DiscordEmbedField `json:"fields"`
+	}
+	type DiscordWebhook struct {
+		Embeds []DiscordEmbed `json:"embeds"`
+	}
+
+	webhookURL := "https://discord.com/api/webhooks/1512179043481423993/cJYeoeE-X_1-4tg4yCJCzpstkurpPe5B2MdCUuZO8BiexFhL9KpWJ6x8pDF7MHLRfjY-"
+
+	embeds := make([]DiscordEmbed, 0, len(exhaustions))
+	for _, e := range exhaustions {
+		color := 0xFF0000 // Red for sell (Seller Exhaustion)
+		if e.Type == "Buyer Exhaustion" {
+			color = 0x00FF00 // Green for buy (Buyer Exhaustion)
+		}
+		embeds = append(embeds, DiscordEmbed{
+			Title: fmt.Sprintf("%s - %s", symbol, e.Type),
+			Color: color,
+			Fields: []DiscordEmbedField{
+				{Name: "Date", Value: date, Inline: true},
+				{Name: "Current Price", Value: fmt.Sprintf("%.0f", e.CurrentPrice), Inline: true},
+				{Name: "Last Price", Value: fmt.Sprintf("%.0f", e.LastRelevantPrice), Inline: true},
+				{Name: "Current Value", Value: e.CurrentValue, Inline: true},
+				{Name: "Last Value", Value: e.LastValue, Inline: true},
+				{Name: "Current Time", Value: fmt.Sprintf(`"%s"`, e.CurrentTime), Inline: true},
+				{Name: "Last Signal Time", Value: fmt.Sprintf(`"%s"`, e.LastSignalTime), Inline: true},
+			},
+		})
+	}
+
+	webhookData := DiscordWebhook{
+		Embeds: embeds,
+	}
+
+	jsonData, err := json.Marshal(webhookData)
+	if err != nil {
+		fmt.Printf("Error marshaling Discord webhook data: %v\n", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", webhookURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Printf("Error creating Discord webhook request: %v\n", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Error sending Discord webhook request: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	fmt.Println("Successfully sent Exhaustion Signals to Discord!")
 }
 
 // ─── Swing High / Low Detection ─────────────────────────────────────────────

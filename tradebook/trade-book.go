@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -21,10 +22,16 @@ type PricePoint struct {
 	Value *ValueField `json:"value"`
 }
 
+type NetValuePoint struct {
+	Time  string      `json:"time"`
+	Value *ValueField `json:"value"`
+}
+
 type APIResponse struct {
 	Message string `json:"message"`
 	Data    struct {
-		Prices []PricePoint `json:"prices"`
+		Prices    []PricePoint    `json:"prices"`
+		NetValues []NetValuePoint `json:"net_values"`
 	} `json:"data"`
 }
 
@@ -51,7 +58,7 @@ type SwingPoint struct {
 
 // ─── Fetch Data ──────────────────────────────────────────────────────────────
 
-func fetchPrices(symbol, date, token string) ([]Candle, error) {
+func fetchPrices(symbol, date, token string) ([]Candle, []NetValue, error) {
 	url := fmt.Sprintf(
 		"https://exodus.stockbit.com/order-trade/trade-book/chart?symbol=%s&time_interval=1m&date=%s",
 		symbol, date,
@@ -59,7 +66,7 @@ func fetchPrices(symbol, date, token string) ([]Candle, error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -72,37 +79,37 @@ func fetchPrices(symbol, date, token string) ([]Candle, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w\nBody: %s", err, string(body[:min(200, len(body))]))
+		return nil, nil, fmt.Errorf("failed to parse JSON: %w\nBody: %s", err, string(body[:min(200, len(body))]))
 	}
 
-	return parsePrices(apiResp.Data.Prices), nil
+	return parsePrices(apiResp.Data.Prices), parseNetValues(apiResp.Data.NetValues), nil
 }
 
 // ─── Load from local JSON file (for testing) ────────────────────────────────
 
-func loadFromFile(path string) ([]Candle, error) {
+func loadFromFile(path string) ([]Candle, []NetValue, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(data, &apiResp); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return parsePrices(apiResp.Data.Prices), nil
+	return parsePrices(apiResp.Data.Prices), parseNetValues(apiResp.Data.NetValues), nil
 }
 
 func parsePrices(points []PricePoint) []Candle {
@@ -118,6 +125,149 @@ func parsePrices(points []PricePoint) []Candle {
 		candles = append(candles, Candle{Price: price, Time: p.Time})
 	}
 	return candles
+}
+
+// ─── Net Value Parsing and Z-score Detection ─────────────────────────────────
+
+type NetValue struct {
+	Value     float64
+	Time      string
+	Formatted string
+}
+
+func parseNetValues(points []NetValuePoint) []NetValue {
+	var netValues []NetValue
+	for _, p := range points {
+		if p.Value == nil {
+			continue
+		}
+		value, err := strconv.ParseFloat(p.Value.Raw, 64)
+		if err != nil {
+			continue
+		}
+		netValues = append(netValues, NetValue{
+			Value:     value,
+			Time:      p.Time,
+			Formatted: p.Value.Formatted,
+		})
+	}
+	return netValues
+}
+
+func calculateZScore(values []float64) []float64 {
+	if len(values) == 0 {
+		return nil
+	}
+
+	// Calculate mean
+	sum := 0.0
+	for _, v := range values {
+		sum += v
+	}
+	mean := sum / float64(len(values))
+
+	// Calculate standard deviation
+	variance := 0.0
+	for _, v := range values {
+		diff := v - mean
+		variance += diff * diff
+	}
+	stdDev := 0.0
+	if len(values) > 1 {
+		variance = variance / float64(len(values)-1)
+		stdDev = 0.0
+		if variance > 0 {
+			stdDev = math.Sqrt(variance)
+		}
+	}
+
+	// Calculate Z-scores
+	zScores := make([]float64, len(values))
+	for i, v := range values {
+		if stdDev > 0 {
+			zScores[i] = (v - mean) / stdDev
+		} else {
+			zScores[i] = 0
+		}
+	}
+
+	return zScores
+}
+
+type BigSignal struct {
+	FormattedValue string
+	Time           string
+	IsBuy          bool
+}
+
+func detectBigSignals(netValues []NetValue, threshold float64) []BigSignal {
+	if len(netValues) < 2 {
+		return nil
+	}
+
+	// Extract raw values
+	values := make([]float64, len(netValues))
+	for i, nv := range netValues {
+		values[i] = nv.Value
+	}
+
+	// Calculate Z-scores
+	zScores := calculateZScore(values)
+
+	// Detect big signals
+	var signals []BigSignal
+	for i, nv := range netValues {
+		if zScores[i] >= threshold {
+			signals = append(signals, BigSignal{
+				FormattedValue: nv.Formatted,
+				Time:           nv.Time,
+				IsBuy:          true,
+			})
+		} else if zScores[i] <= -threshold {
+			signals = append(signals, BigSignal{
+				FormattedValue: nv.Formatted,
+				Time:           nv.Time,
+				IsBuy:          false,
+			})
+		}
+	}
+
+	return signals
+}
+
+func printBigSignals(signals []BigSignal) {
+	if len(signals) == 0 {
+		fmt.Println("=== No Big Signals Detected ===")
+		fmt.Println()
+		return
+	}
+
+	var bigBuys []BigSignal
+	var bigSells []BigSignal
+
+	for _, s := range signals {
+		if s.IsBuy {
+			bigBuys = append(bigBuys, s)
+		} else {
+			bigSells = append(bigSells, s)
+		}
+	}
+
+	if len(bigSells) > 0 {
+		fmt.Println("Big Sell:")
+		for _, s := range bigSells {
+			fmt.Printf("{\"%s\", \"%s\"}\n", s.FormattedValue, s.Time)
+		}
+		fmt.Println()
+	}
+
+	if len(bigBuys) > 0 {
+		fmt.Println("Big Buy:")
+		for _, s := range bigBuys {
+			fmt.Printf("{\"%s\", \"%s\"}\n", s.FormattedValue, s.Time)
+		}
+		fmt.Println()
+	}
 }
 
 // ─── Swing High / Low Detection ─────────────────────────────────────────────
@@ -312,18 +462,25 @@ func main() {
 		symbol            = "RAJA"
 		date              = "2026-06-10"
 		token             = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMTQ1NjcxLCJpYXQiOjE3ODEwNTkyNzEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiMjdjZmFjNDItNWVhMS00M2EwLWI4NzEtYTQ4MDlhNGM4Nzc4IiwibmJmIjoxNzgxMDU5MjcxLCJ2ZXIiOiJ2MSJ9.Mw_HXz8JAG6DwDmFzEp4hv6bU5DbrlseA9ZWYEv2gAFnVO5eCc2yuoROdFshC1D7hYx_nrE5TKmHqo-C_NS-DaSisfE4O8DJFWLycfHCGNvveKa31_3eK2y22EAPny_jBb7_Eci8lX0TyKMrJNnH0ZbXE0XS-OkLY2na_fPtWVRmP2R9hZd17xnxdh52F1wzMBjOWhlfFDqPKoJsQRYWic7IkigHloBRoM2-va5k8yw5BMOjKx3DWM572Oq4C_Yk60vCg6aXyD2LpkMOg9MKP_4yo-K69-TQ3RcESikwMUFWqLmHChNrkvZsM2RmFUOfAxu0B4op4UYL-rNI0QThow"
-		swingPointsLength = 5                 // candles on each side to confirm swing high/low (higher = fewer, more significant swings)
-		localFile         = "trade-book.json" // set to "" to fetch from API
+		swingPointsLength = 5   // candles on each side to confirm swing high/low (higher = fewer, more significant swings)
+		zScoreThreshold   = 2.0 // Z-score threshold for Big Buy/Sell detection
+		localFile         = ""  // set to "" to fetch from API
 	)
 
 	fmt.Printf("Market Structure Analyzer — %s (%s)\n\n", symbol, date)
 
 	// Load candles: prefer local file if present, fallback to API
 	var candles []Candle
+	var netValues []NetValue
 	var err error
 
-	fmt.Printf("Fetching from API: %s %s\n", symbol, date)
-	candles, err = fetchPrices(symbol, date, token)
+	if localFile != "" {
+		fmt.Printf("Loading from local file: %s\n", localFile)
+		candles, netValues, err = loadFromFile(localFile)
+	} else {
+		fmt.Printf("Fetching from API: %s %s\n", symbol, date)
+		candles, netValues, err = fetchPrices(symbol, date, token)
+	}
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
@@ -348,4 +505,9 @@ func main() {
 	printSummary(candles, swings, structure)
 	fmt.Println()
 	printStructure(structure)
+
+	// Detect and print Big Buy/Sell signals from net_values
+	fmt.Println()
+	bigSignals := detectBigSignals(netValues, zScoreThreshold)
+	printBigSignals(bigSignals)
 }

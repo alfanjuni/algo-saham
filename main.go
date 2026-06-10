@@ -15,10 +15,12 @@ import (
 )
 
 const (
-	TopLevel            = 3
-	Threshold           = 2.0
-	STOCKBIT_TOKEN      = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMDU4MzczLCJpYXQiOjE3ODA5NzE5NzMsImlzcyI6IlNUT0NLQklUIiwianRpIjoiZjRiNjdiMzctYTdmZi00Y2VjLWJiMDQtMDIzMTNmM2Y2YzBjIiwibmJmIjoxNzgwOTcxOTczLCJ2ZXIiOiJ2MSJ9.GtpYQGmlN_9gZ_bGeOZEMpmId2xMQMiakPFnSCeZe0xva2GyvKYj9aDE9I3-GRW9_j-G3Xusi5zqa2pS34mtTzo0i0MtpMtGjRwrrrzCcXbz15DiQcj-P6JGxHasSFdsvH7JpzQAmE_Q-ehqTsy3no2OQJE_d3jvOn2Fdvt0dAmZK7kngXwgvN7qIVCdU_ITt6zAkkYwzIz1nU3CpgOEUa97TGy9SY28qJHHaivOrsIgKiK2XLfRCehQ4Ea4_-xoQvJv0wAxx8Mlrp2XF9pgzVeH2-AfIbsObO7Qdyo2RJE_eNQBqCAZ-1U3yEBXkOMP6lOEsDmu4LgpVBMJTXJtew"
-	DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1511451021178704044/3TV6cdYYkcE3R9A-9BLhVVNjQRLCowcFSHJhSNemuszPEkSqJKSVUtS1Y-3SPCTVkQxj"
+	TopLevel               = 3
+	Threshold              = 2.0
+	STOCKBIT_TOKEN         = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMDU4MzczLCJpYXQiOjE3ODA5NzE5NzMsImlzcyI6IlNUT0NLQklUIiwianRpIjoiZjRiNjdiMzctYTdmZi00Y2VjLWJiMDQtMDIzMTNmM2Y2YzBjIiwibmJmIjoxNzgwOTcxOTczLCJ2ZXIiOiJ2MSJ9.GtpYQGmlN_9gZ_bGeOZEMpmId2xMQMiakPFnSCeZe0xva2GyvKYj9aDE9I3-GRW9_j-G3Xusi5zqa2pS34mtTzo0i0MtpMtGjRwrrrzCcXbz15DiQcj-P6JGxHasSFdsvH7JpzQAmE_Q-ehqTsy3no2OQJE_d3jvOn2Fdvt0dAmZK7kngXwgvN7qIVCdU_ITt6zAkkYwzIz1nU3CpgOEUa97TGy9SY28qJHHaivOrsIgKiK2XLfRCehQ4Ea4_-xoQvJv0wAxx8Mlrp2XF9pgzVeH2-AfIbsObO7Qdyo2RJE_eNQBqCAZ-1U3yEBXkOMP6lOEsDmu4LgpVBMJTXJtew"
+	DISCORD_WEBHOOK_URL    = "https://discord.com/api/webhooks/1511451021178704044/3TV6cdYYkcE3R9A-9BLhVVNjQRLCowcFSHJhSNemuszPEkSqJKSVUtS1Y-3SPCTVkQxj"
+	FREQ_OFFER_WEBHOOK_URL = "https://discord.com/api/webhooks/1514083684775629085/YSlkyPYDvdxnuU9JXRbwztoi_tWcqmUuTJFuL22fgQkkuXdidD6dlvfv5bpQy42unbSj"
+	FREQ_OFFER_THRESHOLD   = 5.0
 
 	// Pengaturan Jam Operasional (WIB)
 	UseTradingHours = true
@@ -266,6 +268,57 @@ func isTradingTime() bool {
 	return currentMinutes >= startMinutes && currentMinutes <= endMinutes
 }
 
+func formatBidOfferTable(item Item) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📊 **Bid Offer: %s** (Price: %d)\n", item.Symbol, item.LastPrice))
+	sb.WriteString("```\n")
+	sb.WriteString(fmt.Sprintf("%-6s | %10s | %6s | %6s | %10s | %6s\n", "Freq", "Lot", "Bid", "Offer", "Lot", "Freq"))
+	sb.WriteString(strings.Repeat("-", 59) + "\n")
+
+	maxLevels := 10
+	bidLen := len(item.Bid)
+	offLen := len(item.Offer)
+	rows := bidLen
+	if offLen > rows {
+		rows = offLen
+	}
+	if rows > maxLevels {
+		rows = maxLevels
+	}
+
+	var totalBidLot, totalOffLot float64
+	var totalBidFreq, totalOffFreq float64
+
+	for i := 0; i < rows; i++ {
+		bFreq, bLot, bPrice := "-", "-", "-"
+		if i < bidLen {
+			bFreq = item.Bid[i].QueNum
+			lot := toFloat(item.Bid[i].Volume) / 100
+			bLot = fmt.Sprintf("%.0f", lot)
+			bPrice = item.Bid[i].Price
+			totalBidLot += lot
+			totalBidFreq += toFloat(item.Bid[i].QueNum)
+		}
+
+		oFreq, oLot, oPrice := "-", "-", "-"
+		if i < offLen {
+			oFreq = item.Offer[i].QueNum
+			lot := toFloat(item.Offer[i].Volume) / 100
+			oLot = fmt.Sprintf("%.0f", lot)
+			oPrice = item.Offer[i].Price
+			totalOffLot += lot
+			totalOffFreq += toFloat(item.Offer[i].QueNum)
+		}
+
+		sb.WriteString(fmt.Sprintf("%-6s | %10s | %6s | %6s | %10s | %6s\n", bFreq, bLot, bPrice, oPrice, oLot, oFreq))
+	}
+
+	sb.WriteString(strings.Repeat("-", 59) + "\n")
+	sb.WriteString(fmt.Sprintf("%-6.0f | %10.0f | %15s | %10.0f | %6.0f\n", totalBidFreq, totalBidLot, "TOTAL", totalOffLot, totalOffFreq))
+	sb.WriteString("```")
+	return sb.String()
+}
+
 func main() {
 	// Load .env file
 	err := godotenv.Load()
@@ -275,6 +328,7 @@ func main() {
 
 	token := STOCKBIT_TOKEN
 	discordWebhook := DISCORD_WEBHOOK_URL
+	freqOfferWebhook := FREQ_OFFER_WEBHOOK_URL
 
 	if token == "" {
 		log.Fatal("STOCKBIT_TOKEN kosong")
@@ -282,6 +336,10 @@ func main() {
 
 	if discordWebhook == "" {
 		log.Println("Warning: DISCORD_WEBHOOK_URL tidak ditemukan di .env")
+	}
+
+	if freqOfferWebhook == "" {
+		log.Println("Warning: FREQ_OFFER_WEBHOOK_URL tidak ditemukan di .env")
 	}
 
 	// Template ID yang ingin diambil (default 0)
@@ -344,6 +402,12 @@ func main() {
 						BidLot:   bidLot,
 						OfferLot: offerLot,
 					})
+				}
+
+				// Notifikasi khusus jika Freq Offer (QueueRatio) > threshold
+				if result.QueueRatio > FREQ_OFFER_THRESHOLD && freqOfferWebhook != "" {
+					tableMsg := formatBidOfferTable(item)
+					sendDiscordNotification(freqOfferWebhook, tableMsg)
 				}
 			}
 		}

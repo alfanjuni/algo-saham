@@ -350,14 +350,9 @@ func main() {
 
 		// Kirim ke Discord jika ada sinyal yang lolos filter
 		if len(signals) > 0 && discordWebhook != "" {
-			// Urutkan: BUY dulu baru SELL, lalu NEUTRAL
+			// Urutkan berdasarkan OfferQueue terbesar
 			sort.Slice(signals, func(i, j int) bool {
-				if signals[i].Signal != signals[j].Signal {
-					// Custom order: BUY (1), SELL (2), NEUTRAL (3)
-					order := map[string]int{"BUY": 1, "SELL": 2, "NEUTRAL": 3}
-					return order[signals[i].Signal] < order[signals[j].Signal]
-				}
-				return signals[i].Symbol < signals[j].Symbol
+				return signals[i].OfferQueue > signals[j].OfferQueue
 			})
 
 			var discordMsg strings.Builder

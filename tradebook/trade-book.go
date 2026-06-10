@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // ─── API Response Structs ────────────────────────────────────────────────────
@@ -33,6 +34,22 @@ type APIResponse struct {
 	Data    struct {
 		Prices    []PricePoint    `json:"prices"`
 		NetValues []NetValuePoint `json:"net_values"`
+	} `json:"data"`
+}
+
+type MarketMoverResponse struct {
+	Message string `json:"message"`
+	Data    struct {
+		MoverList []struct {
+			StockDetail struct {
+				Code   string `json:"code"`
+				Price  int    `json:"price"`
+				Change struct {
+					Value      int     `json:"value"`
+					Percentage float64 `json:"percentage"`
+				} `json:"change"`
+			} `json:"stock_detail"`
+		} `json:"mover_list"`
 	} `json:"data"`
 }
 
@@ -95,6 +112,48 @@ func fetchPrices(symbol, date, token string) ([]Candle, []NetValue, error) {
 	}
 
 	return parsePrices(apiResp.Data.Prices), parseNetValues(apiResp.Data.NetValues), nil
+}
+
+func fetchMarketMoverSymbols(token string) ([]string, error) {
+	url := "https://exodus.stockbit.com/order-trade/market-mover?mover_type=MOVER_TYPE_TOP_VALUE&filter_stocks=FILTER_STOCKS_TYPE_MAIN_BOARD&filter_stocks=FILTER_STOCKS_TYPE_DEVELOPMENT_BOARD&filter_stocks=FILTER_STOCKS_TYPE_ACCELERATION_BOARD&filter_stocks=FILTER_STOCKS_TYPE_NEW_ECONOMY_BOARD"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("accept", "application/json, text/plain, */*")
+	req.Header.Set("origin", "https://stockbit.com")
+	req.Header.Set("referer", "https://stockbit.com/")
+	req.Header.Set("x-platform", "web")
+	req.Header.Set("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var marketMoverResp MarketMoverResponse
+	if err := json.Unmarshal(body, &marketMoverResp); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w\nBody: %s", err, string(body[:min(200, len(body))]))
+	}
+
+	symbols := make([]string, 0, len(marketMoverResp.Data.MoverList))
+	for _, mover := range marketMoverResp.Data.MoverList {
+		if mover.StockDetail.Code != "" {
+			symbols = append(symbols, mover.StockDetail.Code)
+		}
+	}
+
+	return symbols, nil
 }
 
 // ─── Load from local JSON file (for testing) ────────────────────────────────
@@ -777,7 +836,6 @@ func min(a, b int) int {
 func main() {
 	// Config
 	const (
-		symbol            = "DSSA"
 		date              = "2026-06-10"
 		token             = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMTQ1NjcxLCJpYXQiOjE3ODEwNTkyNzEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiMjdjZmFjNDItNWVhMS00M2EwLWI4NzEtYTQ4MDlhNGM4Nzc4IiwibmJmIjoxNzgxMDU5MjcxLCJ2ZXIiOiJ2MSJ9.Mw_HXz8JAG6DwDmFzEp4hv6bU5DbrlseA9ZWYEv2gAFnVO5eCc2yuoROdFshC1D7hYx_nrE5TKmHqo-C_NS-DaSisfE4O8DJFWLycfHCGNvveKa31_3eK2y22EAPny_jBb7_Eci8lX0TyKMrJNnH0ZbXE0XS-OkLY2na_fPtWVRmP2R9hZd17xnxdh52F1wzMBjOWhlfFDqPKoJsQRYWic7IkigHloBRoM2-va5k8yw5BMOjKx3DWM572Oq4C_Yk60vCg6aXyD2LpkMOg9MKP_4yo-K69-TQ3RcESikwMUFWqLmHChNrkvZsM2RmFUOfAxu0B4op4UYL-rNI0QThow"
 		swingPointsLength = 5   // candles on each side to confirm swing high/low (higher = fewer, more significant swings)
@@ -785,51 +843,67 @@ func main() {
 		localFile         = ""  // set to "" to fetch from API
 	)
 
-	fmt.Printf("Market Structure Analyzer — %s (%s)\n\n", symbol, date)
-
-	// Load candles: prefer local file if present, fallback to API
-	var candles []Candle
-	var netValues []NetValue
-	var err error
-
-	if localFile != "" {
-		fmt.Printf("Loading from local file: %s\n", localFile)
-		candles, netValues, err = loadFromFile(localFile)
-	} else {
-		fmt.Printf("Fetching from API: %s %s\n", symbol, date)
-		candles, netValues, err = fetchPrices(symbol, date, token)
-	}
-
+	// Fetch list of symbols from market-mover endpoint
+	symbols, err := fetchMarketMoverSymbols(token)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to fetch market mover symbols: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Fetched %d symbols from market mover\n", len(symbols))
+	fmt.Println()
 
-	if len(candles) == 0 {
-		fmt.Println("No price data found.")
-		os.Exit(1)
+	// Loop through each symbol
+	for _, symbol := range symbols {
+		fmt.Printf("Processing %s...\n", symbol)
+		fmt.Println(strings.Repeat("-", 50))
+
+		var candles []Candle
+		var netValues []NetValue
+		var errFetch error
+
+		if localFile != "" {
+			fmt.Printf("Loading from local file: %s\n", localFile)
+			candles, netValues, errFetch = loadFromFile(localFile)
+		} else {
+			candles, netValues, errFetch = fetchPrices(symbol, date, token)
+		}
+
+		if errFetch != nil {
+			fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", symbol, errFetch)
+			fmt.Println()
+			continue
+		}
+
+		if len(candles) == 0 {
+			fmt.Printf("No price data found for %s, skipping...\n", symbol)
+			fmt.Println()
+			continue
+		}
+
+		// Detect initial swings
+		rawSwings := detectSwings(candles, swingPointsLength)
+
+		// Filter and structure swings for SMC (strict alternation H → L → H → L)
+		swings := filterAndStructureSwings(rawSwings)
+
+		// Build labeled market structure
+		structure := buildMarketStructure(swings)
+
+		// Output
+		printSummary(candles, swings, structure)
+		fmt.Println()
+		printStructure(structure)
+
+		// Detect and print Big Buy/Sell signals from net_values
+		fmt.Println()
+		bigSignals := detectBigSignals(netValues, zScoreThreshold)
+		printBigSignals(bigSignals)
+
+		// Detect and print Exhaustion signals
+		exhaustions := detectExhaustion(swings, bigSignals, netValues)
+		printExhaustionSignals(exhaustions, symbol, date)
+
+		fmt.Println()
+		fmt.Println()
 	}
-
-	// Detect initial swings
-	rawSwings := detectSwings(candles, swingPointsLength)
-
-	// Filter and structure swings for SMC (strict alternation H → L → H → L)
-	swings := filterAndStructureSwings(rawSwings)
-
-	// Build labeled market structure
-	structure := buildMarketStructure(swings)
-
-	// Output
-	printSummary(candles, swings, structure)
-	fmt.Println()
-	printStructure(structure)
-
-	// Detect and print Big Buy/Sell signals from net_values
-	fmt.Println()
-	bigSignals := detectBigSignals(netValues, zScoreThreshold)
-	printBigSignals(bigSignals)
-
-	// Detect and print Exhaustion signals
-	exhaustions := detectExhaustion(swings, bigSignals, netValues)
-	printExhaustionSignals(exhaustions, symbol, date)
 }

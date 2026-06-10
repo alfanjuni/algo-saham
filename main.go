@@ -425,24 +425,31 @@ func main() {
 			var discordMsg strings.Builder
 			discordMsg.WriteString(fmt.Sprintf("🚀 **Algo Bid Offer 3 Papan Teratas [%s]**\n", nowWIB.Format("15:04:05")))
 			discordMsg.WriteString("```\n")
-			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %6s | %5s | %5s | %s\n", "Symbol", "Price", "Gain%", "Vol", "Freq", "Signal"))
-			discordMsg.WriteString(strings.Repeat("-", 48) + "\n")
+			discordMsg.WriteString(fmt.Sprintf("%-6s | %5s | %5s | %5s | %-6s | %s\n", "Symbol", "Price", "Gain", "Vol", "Freq", "Signal"))
+			discordMsg.WriteString(strings.Repeat("-", 47) + "\n")
 
 			for _, res := range signals {
-				icon := "⚪" // Default Neutral
+				icon := "⚪️" // Default Neutral
+				label := res.Signal
 				if res.Signal == "BUY" {
 					icon = "🟢"
 				} else if res.Signal == "SELL" {
 					icon = "🔴"
+				} else if res.Signal == "NEUTRAL" {
+					label = "N"
 				}
 
-				freqStr := fmt.Sprintf("%.2f", res.QueueRatio)
+				freqBase := fmt.Sprintf("%.2f", res.QueueRatio)
+				// Gunakan format string langsung tanpa padding fmt untuk kolom yang ada emoji
+				var freqDisplay string
 				if res.QueueRatio > FREQ_OFFER_THRESHOLD {
-					freqStr += "🔥"
+					freqDisplay = fmt.Sprintf("%-4s🔥", freqBase)
+				} else {
+					freqDisplay = fmt.Sprintf("%-4s  ", freqBase)
 				}
 
-				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %5.2f%% | %5.2f | %5s | %s %s\n",
-					res.Symbol, res.LastPrice, res.PercentageChange, res.VolumeRatio, freqStr, icon, res.Signal))
+				discordMsg.WriteString(fmt.Sprintf("$%-5s | %5d | %4.0f%% | %5.2f | %-6s | %s %s\n",
+					res.Symbol, res.LastPrice, res.PercentageChange, res.VolumeRatio, freqDisplay, icon, label))
 			}
 			discordMsg.WriteString("```")
 

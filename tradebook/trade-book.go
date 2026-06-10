@@ -198,6 +198,17 @@ type BigSignal struct {
 	FormattedValue string
 	Time           string
 	IsBuy          bool
+	RawValue       float64
+}
+
+type ExhaustionSignal struct {
+	Type              string
+	CurrentPrice      float64
+	LastRelevantPrice float64
+	CurrentValue      string
+	LastValue         string
+	CurrentTime       string
+	LastSignalTime    string
 }
 
 func detectBigSignals(netValues []NetValue, threshold float64) []BigSignal {
@@ -222,12 +233,14 @@ func detectBigSignals(netValues []NetValue, threshold float64) []BigSignal {
 				FormattedValue: nv.Formatted,
 				Time:           nv.Time,
 				IsBuy:          true,
+				RawValue:       nv.Value,
 			})
 		} else if zScores[i] <= -threshold {
 			signals = append(signals, BigSignal{
 				FormattedValue: nv.Formatted,
 				Time:           nv.Time,
 				IsBuy:          false,
+				RawValue:       nv.Value,
 			})
 		}
 	}
@@ -266,6 +279,241 @@ func printBigSignals(signals []BigSignal) {
 		for _, s := range bigBuys {
 			fmt.Printf("{\"%s\", \"%s\"}\n", s.FormattedValue, s.Time)
 		}
+		fmt.Println()
+	}
+}
+
+func findNetValueAtOrBeforeTime(time string, bigSignals []BigSignal) *BigSignal {
+	var lastSignal *BigSignal
+	for _, signal := range bigSignals {
+		if signal.Time <= time {
+			lastSignal = &signal
+		}
+	}
+	return lastSignal
+}
+
+func findNearestBigSellBeforeTime(time string, bigSignals []BigSignal) *BigSignal {
+	var lastSell *BigSignal
+	for _, signal := range bigSignals {
+		if !signal.IsBuy && signal.Time <= time {
+			lastSell = &signal
+		}
+	}
+	return lastSell
+}
+
+func findNearestBigBuyBeforeTime(time string, bigSignals []BigSignal) *BigSignal {
+	var lastBuy *BigSignal
+	for _, signal := range bigSignals {
+		if signal.IsBuy && signal.Time <= time {
+			lastBuy = &signal
+		}
+	}
+	return lastBuy
+}
+
+func getNetValueAtOrNearTime(targetTime string, netValues []NetValue) *NetValue {
+	for _, nv := range netValues {
+		if nv.Time == targetTime {
+			return &nv
+		}
+	}
+	// Find nearest before target time
+	var nearestBefore *NetValue
+	for _, nv := range netValues {
+		if nv.Time < targetTime {
+			if nearestBefore == nil || nv.Time > nearestBefore.Time {
+				nearestBefore = &nv
+			}
+		}
+	}
+	return nearestBefore
+}
+
+func detectExhaustion(swings []SwingPoint, bigSignals []BigSignal, netValues []NetValue) []ExhaustionSignal {
+	var exhaustionSignals []ExhaustionSignal
+
+	if len(swings) < 2 || len(bigSignals) == 0 {
+		return exhaustionSignals
+	}
+
+	var lastSwingHigh *SwingPoint
+	var lastSwingLow *SwingPoint
+
+	var maxBigSell *BigSignal // most negative (biggest sell)
+	var maxBigBuy *BigSignal  // most positive (biggest buy)
+
+	var lastUsedBigSell *BigSignal
+	var lastUsedBigBuy *BigSignal
+
+	for idx, swing := range swings {
+		currentBigSell := findNearestBigSellAtOrBeforeTime(swing.Time, bigSignals)
+		currentBigBuy := findNearestBigBuyAtOrBeforeTime(swing.Time, bigSignals)
+
+		// Update maxBigSell/maxBigBuy with any new bigger signals up to swing time
+		for _, signal := range bigSignals {
+			if signal.Time > swing.Time {
+				continue
+			}
+			if !signal.IsBuy {
+				if maxBigSell == nil || signal.RawValue < maxBigSell.RawValue {
+					maxBigSell = &signal
+				}
+			} else {
+				if maxBigBuy == nil || signal.RawValue > maxBigBuy.RawValue {
+					maxBigBuy = &signal
+				}
+			}
+		}
+
+		if idx == 0 {
+			if swing.Type == SwingHigh {
+				lastSwingHigh = &swing
+			} else {
+				lastSwingLow = &swing
+			}
+			lastUsedBigSell = maxBigSell
+			lastUsedBigBuy = maxBigBuy
+			continue
+		}
+
+		// Now update last used for this iteration with current max values
+		var currentCheckBigSell *BigSignal = lastUsedBigSell
+		var currentCheckBigBuy *BigSignal = lastUsedBigBuy
+		if maxBigSell != nil {
+			currentCheckBigSell = maxBigSell
+		}
+		if maxBigBuy != nil {
+			currentCheckBigBuy = maxBigBuy
+		}
+
+		if swing.Type == SwingLow {
+			if lastSwingLow != nil {
+				if swing.Price < lastSwingLow.Price {
+					if currentBigSell != nil && currentCheckBigSell != nil {
+						if currentBigSell.RawValue > currentCheckBigSell.RawValue {
+							exhaustionSignals = append(exhaustionSignals, ExhaustionSignal{
+								Type:              "Seller Exhaustion",
+								CurrentPrice:      swing.Price,
+								LastRelevantPrice: lastSwingLow.Price,
+								CurrentValue:      currentBigSell.FormattedValue,
+								LastValue:         currentCheckBigSell.FormattedValue,
+								CurrentTime:       swing.Time,
+								LastSignalTime:    currentCheckBigSell.Time,
+							})
+						}
+					}
+				}
+			}
+			lastSwingLow = &swing
+		} else if swing.Type == SwingHigh {
+			if lastSwingHigh != nil {
+				if swing.Price > lastSwingHigh.Price {
+					if currentBigBuy != nil && currentCheckBigBuy != nil {
+						if currentBigBuy.RawValue < currentCheckBigBuy.RawValue {
+							exhaustionSignals = append(exhaustionSignals, ExhaustionSignal{
+								Type:              "Buyer Exhaustion",
+								CurrentPrice:      swing.Price,
+								LastRelevantPrice: lastSwingHigh.Price,
+								CurrentValue:      currentBigBuy.FormattedValue,
+								LastValue:         currentCheckBigBuy.FormattedValue,
+								CurrentTime:       swing.Time,
+								LastSignalTime:    currentCheckBigBuy.Time,
+							})
+						}
+					}
+				}
+			}
+			lastSwingHigh = &swing
+		}
+
+		// Now update last used for next iteration with max values
+		if maxBigSell != nil {
+			lastUsedBigSell = maxBigSell
+		}
+		if maxBigBuy != nil {
+			lastUsedBigBuy = maxBigBuy
+		}
+	}
+
+	return exhaustionSignals
+}
+
+func findNearestBigSellAtOrBeforeTime(targetTime string, bigSignals []BigSignal) *BigSignal {
+	var lastSell *BigSignal
+	for _, signal := range bigSignals {
+		if !signal.IsBuy && signal.Time <= targetTime {
+			if lastSell == nil || signal.Time > lastSell.Time {
+				lastSell = &signal
+			}
+		}
+	}
+	return lastSell
+}
+
+func findNearestBigBuyAtOrBeforeTime(targetTime string, bigSignals []BigSignal) *BigSignal {
+	var lastBuy *BigSignal
+	for _, signal := range bigSignals {
+		if signal.IsBuy && signal.Time <= targetTime {
+			if lastBuy == nil || signal.Time > lastBuy.Time {
+				lastBuy = &signal
+			}
+		}
+	}
+	return lastBuy
+}
+
+func findNearestBigSignalForType(targetTime string, swingType SwingType, bigSignals []BigSignal) *BigSignal {
+	if swingType == SwingLow {
+		return findNearestBigSellBeforeOrAtTime(targetTime, bigSignals)
+	}
+	return findNearestBigBuyBeforeOrAtTime(targetTime, bigSignals)
+}
+
+func findNearestBigSellBeforeOrAtTime(targetTime string, bigSignals []BigSignal) *BigSignal {
+	var lastSell *BigSignal
+	for _, signal := range bigSignals {
+		if !signal.IsBuy && signal.Time <= targetTime {
+			if lastSell == nil || signal.Time > lastSell.Time {
+				lastSell = &signal
+			}
+		}
+	}
+	return lastSell
+}
+
+func findNearestBigBuyBeforeOrAtTime(targetTime string, bigSignals []BigSignal) *BigSignal {
+	var lastBuy *BigSignal
+	for _, signal := range bigSignals {
+		if signal.IsBuy && signal.Time <= targetTime {
+			if lastBuy == nil || signal.Time > lastBuy.Time {
+				lastBuy = &signal
+			}
+		}
+	}
+	return lastBuy
+}
+
+func printExhaustionSignals(exhaustions []ExhaustionSignal, symbol, date string) {
+	if len(exhaustions) == 0 {
+		fmt.Println("=== No Exhaustion Signals Detected ===")
+		fmt.Println()
+		return
+	}
+
+	fmt.Println("=== Exhaustion Signals ===")
+	fmt.Printf("Symbol: %s\n", symbol)
+	fmt.Printf("Date: %s\n", date)
+	fmt.Println()
+	for _, e := range exhaustions {
+		fmt.Printf("%s:\n", e.Type)
+		fmt.Printf("  current_price: %.0f\n", e.CurrentPrice)
+		fmt.Printf("  last_price: %.0f\n", e.LastRelevantPrice)
+		fmt.Printf("  current_value: \"%s\"\n", e.CurrentValue)
+		fmt.Printf("  last_value: \"%s\"\n", e.LastValue)
+		fmt.Printf("  current_time: \"%s\"\n", e.CurrentTime)
+		fmt.Printf("  last_signal_time: \"%s\"\n", e.LastSignalTime)
 		fmt.Println()
 	}
 }
@@ -459,7 +707,7 @@ func min(a, b int) int {
 func main() {
 	// Config
 	const (
-		symbol            = "RAJA"
+		symbol            = "DSSA"
 		date              = "2026-06-10"
 		token             = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMTQ1NjcxLCJpYXQiOjE3ODEwNTkyNzEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiMjdjZmFjNDItNWVhMS00M2EwLWI4NzEtYTQ4MDlhNGM4Nzc4IiwibmJmIjoxNzgxMDU5MjcxLCJ2ZXIiOiJ2MSJ9.Mw_HXz8JAG6DwDmFzEp4hv6bU5DbrlseA9ZWYEv2gAFnVO5eCc2yuoROdFshC1D7hYx_nrE5TKmHqo-C_NS-DaSisfE4O8DJFWLycfHCGNvveKa31_3eK2y22EAPny_jBb7_Eci8lX0TyKMrJNnH0ZbXE0XS-OkLY2na_fPtWVRmP2R9hZd17xnxdh52F1wzMBjOWhlfFDqPKoJsQRYWic7IkigHloBRoM2-va5k8yw5BMOjKx3DWM572Oq4C_Yk60vCg6aXyD2LpkMOg9MKP_4yo-K69-TQ3RcESikwMUFWqLmHChNrkvZsM2RmFUOfAxu0B4op4UYL-rNI0QThow"
 		swingPointsLength = 5   // candles on each side to confirm swing high/low (higher = fewer, more significant swings)
@@ -510,4 +758,8 @@ func main() {
 	fmt.Println()
 	bigSignals := detectBigSignals(netValues, zScoreThreshold)
 	printBigSignals(bigSignals)
+
+	// Detect and print Exhaustion signals
+	exhaustions := detectExhaustion(swings, bigSignals, netValues)
+	printExhaustionSignals(exhaustions, symbol, date)
 }

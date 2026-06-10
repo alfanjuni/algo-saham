@@ -17,7 +17,7 @@ import (
 const (
 	TopLevel               = 3
 	Threshold              = 2.0
-	STOCKBIT_TOKEN         = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMDU4MzczLCJpYXQiOjE3ODA5NzE5NzMsImlzcyI6IlNUT0NLQklUIiwianRpIjoiZjRiNjdiMzctYTdmZi00Y2VjLWJiMDQtMDIzMTNmM2Y2YzBjIiwibmJmIjoxNzgwOTcxOTczLCJ2ZXIiOiJ2MSJ9.GtpYQGmlN_9gZ_bGeOZEMpmId2xMQMiakPFnSCeZe0xva2GyvKYj9aDE9I3-GRW9_j-G3Xusi5zqa2pS34mtTzo0i0MtpMtGjRwrrrzCcXbz15DiQcj-P6JGxHasSFdsvH7JpzQAmE_Q-ehqTsy3no2OQJE_d3jvOn2Fdvt0dAmZK7kngXwgvN7qIVCdU_ITt6zAkkYwzIz1nU3CpgOEUa97TGy9SY28qJHHaivOrsIgKiK2XLfRCehQ4Ea4_-xoQvJv0wAxx8Mlrp2XF9pgzVeH2-AfIbsObO7Qdyo2RJE_eNQBqCAZ-1U3yEBXkOMP6lOEsDmu4LgpVBMJTXJtew"
+	STOCKBIT_TOKEN         = "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMTQ1NjcxLCJpYXQiOjE3ODEwNTkyNzEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiMjdjZmFjNDItNWVhMS00M2EwLWI4NzEtYTQ4MDlhNGM4Nzc4IiwibmJmIjoxNzgxMDU5MjcxLCJ2ZXIiOiJ2MSJ9.Mw_HXz8JAG6DwDmFzEp4hv6bU5DbrlseA9ZWYEv2gAFnVO5eCc2yuoROdFshC1D7hYx_nrE5TKmHqo-C_NS-DaSisfE4O8DJFWLycfHCGNvveKa31_3eK2y22EAPny_jBb7_Eci8lX0TyKMrJNnH0ZbXE0XS-OkLY2na_fPtWVRmP2R9hZd17xnxdh52F1wzMBjOWhlfFDqPKoJsQRYWic7IkigHloBRoM2-va5k8yw5BMOjKx3DWM572Oq4C_Yk60vCg6aXyD2LpkMOg9MKP_4yo-K69-TQ3RcESikwMUFWqLmHChNrkvZsM2RmFUOfAxu0B4op4UYL-rNI0QThow"
 	DISCORD_WEBHOOK_URL    = "https://discord.com/api/webhooks/1511451021178704044/3TV6cdYYkcE3R9A-9BLhVVNjQRLCowcFSHJhSNemuszPEkSqJKSVUtS1Y-3SPCTVkQxj"
 	FREQ_OFFER_WEBHOOK_URL = "https://discord.com/api/webhooks/1514083684775629085/YSlkyPYDvdxnuU9JXRbwztoi_tWcqmUuTJFuL22fgQkkuXdidD6dlvfv5bpQy42unbSj"
 	FREQ_OFFER_THRESHOLD   = 5.0
@@ -414,9 +414,9 @@ func main() {
 
 		// Kirim ke Discord jika ada sinyal yang lolos filter
 		if len(signals) > 0 && discordWebhook != "" {
-			// Urutkan berdasarkan OfferQueue terbesar
+			// Urutkan berdasarkan Freq (QueueRatio) terbesar
 			sort.Slice(signals, func(i, j int) bool {
-				return signals[i].OfferQueue > signals[j].OfferQueue
+				return signals[i].QueueRatio > signals[j].QueueRatio
 			})
 
 			var discordMsg strings.Builder

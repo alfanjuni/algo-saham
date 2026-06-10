@@ -309,7 +309,7 @@ func min(a, b int) int {
 func main() {
 	// Config
 	const (
-		symbol            = "BBCA"
+		symbol            = "RAJA"
 		date              = "2026-06-10"
 		token             = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExNWQ5OGE2LTdkYzgtNDM3NS05NDk0LTEyOWJlM2RlODVkNCIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7InVzZSI6IkVrYXl1c25pdGEiLCJlbWEiOiJla2F5dXNuaXRhLm5zMTJAZ21haWwuY29tIiwiZnVsIjoiRWtheXVzbml0YSIsInNlcyI6Imt1OEJCTk0xaUV0RGRuWXUiLCJkdmMiOiI5ZGM1NzI4MGQ4MGIzMGFmNTgxMmJlNjBiOWJlZjdjOSIsInVpZCI6MzU1NDkxOCwiY291IjoiSUQifSwiZXhwIjoxNzgxMTQ1NjcxLCJpYXQiOjE3ODEwNTkyNzEsImlzcyI6IlNUT0NLQklUIiwianRpIjoiMjdjZmFjNDItNWVhMS00M2EwLWI4NzEtYTQ4MDlhNGM4Nzc4IiwibmJmIjoxNzgxMDU5MjcxLCJ2ZXIiOiJ2MSJ9.Mw_HXz8JAG6DwDmFzEp4hv6bU5DbrlseA9ZWYEv2gAFnVO5eCc2yuoROdFshC1D7hYx_nrE5TKmHqo-C_NS-DaSisfE4O8DJFWLycfHCGNvveKa31_3eK2y22EAPny_jBb7_Eci8lX0TyKMrJNnH0ZbXE0XS-OkLY2na_fPtWVRmP2R9hZd17xnxdh52F1wzMBjOWhlfFDqPKoJsQRYWic7IkigHloBRoM2-va5k8yw5BMOjKx3DWM572Oq4C_Yk60vCg6aXyD2LpkMOg9MKP_4yo-K69-TQ3RcESikwMUFWqLmHChNrkvZsM2RmFUOfAxu0B4op4UYL-rNI0QThow"
 		swingPointsLength = 5                 // candles on each side to confirm swing high/low (higher = fewer, more significant swings)
@@ -322,13 +322,8 @@ func main() {
 	var candles []Candle
 	var err error
 
-	if localFile != "" {
-		fmt.Printf("Loading from local file: %s\n", localFile)
-		candles, err = loadFromFile(localFile)
-	} else {
-		fmt.Printf("Fetching from API: %s %s\n", symbol, date)
-		candles, err = fetchPrices(symbol, date, token)
-	}
+	fmt.Printf("Fetching from API: %s %s\n", symbol, date)
+	candles, err = fetchPrices(symbol, date, token)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)

@@ -9,7 +9,7 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${fileDirname}",
+      "program": "${workspaceFolder}/tradebook/trade-book.go",
       "env": ["${workspaceFolder}/.env"]
     }
   ]

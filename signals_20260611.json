@@ -1,13 +1,119 @@
 {
   "dates": {
+    "20260610": [
+      {
+        "symbol": "BREN",
+        "Tx": 11
+      },
+      {
+        "symbol": "BRPT",
+        "Tx": 11
+      },
+      {
+        "symbol": "RAJA",
+        "Tx": 11
+      }
+    ],
     "20260611": [
       {
-        "symbol": "RATU",
+        "symbol": "TPIA",
+        "Tx": 2
+      },
+      {
+        "symbol": "RAJA",
+        "Tx": 8
+      },
+      {
+        "symbol": "BULL",
+        "Tx": 1
+      },
+      {
+        "symbol": "CUAN",
         "Tx": 1
       },
       {
         "symbol": "BUVA",
+        "Tx": 13
+      },
+      {
+        "symbol": "BUMI",
         "Tx": 1
+      },
+      {
+        "symbol": "SUPA",
+        "Tx": 1
+      },
+      {
+        "symbol": "MINA",
+        "Tx": 9
+      },
+      {
+        "symbol": "IMPC",
+        "Tx": 9
+      },
+      {
+        "symbol": "BNBR",
+        "Tx": 1
+      },
+      {
+        "symbol": "CBRE",
+        "Tx": 2
+      },
+      {
+        "symbol": "SDMU",
+        "Tx": 8
+      },
+      {
+        "symbol": "KETR",
+        "Tx": 16
+      },
+      {
+        "symbol": "WIFI",
+        "Tx": 8
+      },
+      {
+        "symbol": "MDKA",
+        "Tx": 3
+      },
+      {
+        "symbol": "BRPT",
+        "Tx": 5
+      },
+      {
+        "symbol": "AADI",
+        "Tx": 8
+      },
+      {
+        "symbol": "ADMR",
+        "Tx": 1
+      },
+      {
+        "symbol": "BBCA",
+        "Tx": 5
+      },
+      {
+        "symbol": "PTRO",
+        "Tx": 11
+      },
+      {
+        "symbol": "EMAS",
+        "Tx": 6
+      },
+      {
+        "symbol": "PADA",
+        "Tx": 1
+      },
+      {
+        "symbol": "CBDK",
+        "Tx": 2
+      },
+      {
+        "symbol": "RATU",
+        "Tx": 3
+      },
+      {
+        "symbol": "WBSA",
+        "Tx": 2
       }
     ]
   }
